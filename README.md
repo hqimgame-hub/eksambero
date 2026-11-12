@@ -1,97 +1,65 @@
-# ExamBro Android - Kiosk Client Ujian Anti-Curang
+# ExamBro Android & Web Dashboard Pengawas Ujian
 
-Aplikasi peramban ujian berbasis **Flutter** dan **Android Native (Kotlin)** yang dirancang dengan standar keamanan tinggi untuk pelaksanaan asesmen sekolah (Google Forms, CBT, Quizizz, Moodle, LMS, dll.) tanpa kecurangan.
-
-Aplikasi ini dilengkapi alur otomatisasi **CI/CD GitHub Actions** sehingga Anda dapat mengunduh file `.apk` siap pakai langsung dari GitHub tanpa perlu menginstal SDK atau Android Studio di komputer lokal.
+Ekosistem lengkap aplikasi ujian sekolah berbasis **Flutter Android Client** dan **Web Dashboard Pengawas (Tailwind CSS & Firebase)** untuk menyelenggarakan asesmen sekolah (Google Forms, Quizizz, Moodle, CBT) dengan aman, terkunci, dan terpantau secara langsung (*real-time*).
 
 ---
 
-## 🛡️ Fitur Keamanan & Arsitektur Sistem
-
-| Fitur | Implementasi Teknis | Dampak Keamanan |
-| :--- | :--- | :--- |
-| **Anti-Screenshot & Recording** | `WindowManager.LayoutParams.FLAG_SECURE` | Layar menjadi hitam saat ditangkap/direkam; pratinjau disembunyikan di menu *Recent Apps*. |
-| **Kiosk Mode (App Pinning)** | `startLockTask()` / `stopLockTask()` Native Android | Mengunci bilah navigasi dan status bar sistem agar siswa tidak bisa berpindah aplikasi. |
-| **Pencegahan Layar Mati** | `wakelock_plus` | Layar tetap menyala aktif selama ujian tanpa terganggu waktu sleep perangkat. |
-| **Proteksi Tombol Kembali** | `PopScope(canPop: false)` | Tombol navigasi 'Back' dicegat dan memicu dialog otentikasi PIN Pengawas. |
-| **Otentikasi Guru/Pengawas** | Supervisor PIN Gate | Siswa hanya dapat keluar dari mode ujian jika pengawas memasukkan PIN yang valid (Default: `123`). |
-
----
-
-## 🎨 Keunggulan UI/UX (User Experience)
-
-1. **Desain Material 3 Bersih & Terarah**:
-   - Meminimalkan distraksi visual agar siswa fokus pada materi ujian.
-   - Penataan kartu input URL dengan tombol hapus cepat (`Clear`) dan auto-formatting protokol `https://`.
-2. **Scanner QR Terintegrasi**:
-   - Dilengkapi *viewfinder frame* untuk kemudahan pembidikan kamera.
-   - Tombol toggle lampu senter (*flash*) dan tombol beralih kamera (*flip camera*) untuk kondisi ruangan kelas dengan pencahayaan minim.
-   - Proteksi debouncing deteksi barcode untuk mencegah glitch/multiple trigger.
-3. **Layar Ujian Responsif**:
-   - Indikator progres pemuatan halaman (*Linear Progress Indicator*) di atas WebView memberikan kepastian visual saat halaman form/LMS dimuat.
-   - Tombol *Reload* cepat di AppBar jika terjadi kendala jaringan sementara.
-   - Modal dialog PIN Pengawas dengan tombol intip/sembunyikan PIN (*obscure toggle*).
-
----
-
-## 📂 Struktur Proyek
+## 🌟 Dua Komponen Utama Ekosistem ExamBro
 
 ```text
-├── .github/
-│   └── workflows/
-│       └── build-apk.yml           # CI/CD otomatis untuk merakit APK di GitHub Actions
-├── android/
-│   ├── app/
-│   │   ├── build.gradle            # Konfigurasi build Gradle aplikasi Android
-│   │   └── src/
-│   │       └── main/
-│   │           ├── AndroidManifest.xml # Izin akses (Internet, Kamera, Wakelock)
-│   │           ├── kotlin/com/exambro/app/MainActivity.kt # Handler FLAG_SECURE & Kiosk Mode
-│   │           └── res/            # Tema & icon launcher adaptive
-│   ├── build.gradle
-│   ├── gradle.properties
-│   └── settings.gradle
-├── lib/
-│   └── main.dart                   # Antarmuka Flutter (Home, Scanner, WebView Kiosk)
-├── pubspec.yaml                    # Manajemen paket dependensi Flutter
-└── README.md
+┌─────────────────────────────────┐           ┌─────────────────────────────────┐
+│     1. WEB DASHBOARD GURU       │           │     2. APLIKASI CLIENT HP       │
+│           (Folder: admin/)      │           │    (Folder: lib/ & android/)    │
+├─────────────────────────────────┤           ├─────────────────────────────────┤
+│ • Input Link Soal Ujian         │  Realtime │ • Kiosk Mode (LockTaskMode)     │
+│ • Mode Proyektor QR Raksasa     │ ◄───────► │ • Anti-Screenshot (FLAG_SECURE) │
+│ • Live Monitoring Status Siswa  │  Firebase │ • Deteksi Pelanggaran/Keluar    │
+│ • Remote Unlock Buka Kunci Siswa│           │ • Pencegah Layar Tidur/Wakelock │
+└─────────────────────────────────┘           └─────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Cara Mengunduh File APK dari GitHub
+## 🖥️ 1. Web Dashboard Guru (`admin/`)
 
-1. Buka repositori ini di GitHub: [https://github.com/hqimgame-hub/eksambero](https://github.com/hqimgame-hub/eksambero)
-2. Klik tab **Actions** pada menu di bagian atas.
-3. Klik workflow **Build Android APK** (alur build berjalan otomatis saat setiap push/commit).
-4. Tunggu beberapa menit hingga proses bertanda centang hijau (**Success**).
-5. Klik pada riwayat build tersebut, lalu gulir ke bawah ke bagian **Artifacts**.
-6. Klik **exambro-release-apk** untuk mengunduh arsip zip yang berisi file `app-release.apk`.
-7. Ekstrak dan pasang (install) di perangkat Android siswa.
+Dashboard web yang sangat ringan dan responsif, dapat diakses langsung oleh guru melalui browser laptop:
+
+### Fitur Dashboard Guru:
+1. **Manajemen Sesi Ujian**:
+   - Menentukan mata pelajaran, durasi waktu ujian, dan PIN keluar pengawas (Default: `123`).
+   - Memasukkan link Google Forms / LMS sekolah yang langsung terintegrasi ke QR Code.
+2. **Mode Proyektor Kelas (Projector Presentation)**:
+   - Tampilan layar penuh (*Full Screen*) untuk ditembakkan ke proyektor kelas.
+   - Menampilkan QR Code ujian ukuran besar dengan instruksi langkah demi langkah bagi siswa.
+   - Menampilkan jumlah siswa yang telah bergabung secara *live*.
+3. **Live Student Monitoring**:
+   - Memantau siswa secara *real-time*: Nama, Kelas, Status Layar, Persentase Baterai HP, dan Riwayat Pelanggaran.
+   - Indikator peringatan merah otomatis menyala jika siswa mencoba meminimalkan aplikasi atau menekan tombol keluar.
+   - **Remote Unlock**: Tombol untuk membuka kunci layar siswa secara individu atau sekaligus seluruh siswa setelah waktu ujian usai.
+   - **Export CSV**: Mengunduh rekap daftar kehadiran dan log ujian ke Excel / CSV.
+4. **Distribusi APK Siswa**:
+   - Menyediakan link dan QR Code langsung bagi siswa untuk mengunduh aplikasi `ExamBro.apk`.
+
+### Cara Menjalankan Web Dashboard Guru:
+- **Cara Cepat (Lokal):** Buka file `admin/index.html` langsung menggunakan browser Chrome / Edge di laptop Anda.
+- **Deploy Gratis ke Vercel:** Hubungkan repo ini ke [Vercel](https://vercel.com) dan atur *Root Directory* ke `admin`.
+- **Deploy ke GitHub Pages:** Aktifkan GitHub Pages di menu *Settings* -> *Pages* -> pilih *GitHub Actions*.
 
 ---
 
-## 🔑 Informasi Pengawas
+## 📱 2. Aplikasi Client Siswa (`lib/` & `android/`)
 
-- **Default PIN Pengawas**: `123`
-- Untuk mengubah PIN pengawas, sesuaikan variabel `_adminPassword` pada file `lib/main.dart`:
-  ```dart
-  final String _adminPassword = "PIN_BARU_ANDA";
-  ```
+Aplikasi mobile Android yang dipasang pada HP masing-masing siswa:
+- **Keamanan OS-Level:** Menggunakan `WindowManager.LayoutParams.FLAG_SECURE` dan Android Native `LockTaskMode` untuk mengunci bilah navigasi dan mematikan fungsi screenshot/perekaman layar.
+- **Kamera Scanner Terintegrasi:** Siswa cukup memindai QR Code di layar proyektor kelas untuk langsung memulai ujian.
+- **Otomatisasi Kompilasi (CI/CD):** Setiap push ke cabang `main` akan memicu GitHub Actions untuk merakit file `.apk` siap pakai.
 
 ---
 
-## 🛠️ Menjalankan Secara Lokal (Opsional)
+## 🚀 Cara Mengunduh File APK Siswa dari GitHub
 
-Jika Anda ingin menjalankan atau mengembangkan aplikasi di komputer lokal:
-
-```bash
-# 1. Unduh dependensi
-flutter pub get
-
-# 2. Jalankan aplikasi pada perangkat yang terhubung
-flutter run
-
-# 3. Merakit APK release secara manual
-flutter build apk --release
-```
+1. Buka repositori: [https://github.com/hqimgame-hub/eksambero](https://github.com/hqimgame-hub/eksambero)
+2. Klik tab **Actions** di bagian atas repositori.
+3. Klik workflow **Build APK and Deploy Admin Web**.
+4. Setelah tanda centang hijau muncul, buka detail riwayat build dan temukan tabel **Artifacts**.
+5. Klik **`exambro-release-apk`** untuk mengunduh file APK.
