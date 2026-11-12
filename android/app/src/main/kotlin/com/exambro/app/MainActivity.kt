@@ -1,6 +1,9 @@
 package com.exambro.app
 
+import android.content.Context
+import android.os.BatteryManager
 import android.os.Bundle
+import android.provider.Settings
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -36,6 +39,23 @@ class MainActivity: FlutterActivity() {
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("KIOSK_ERROR", e.message, null)
+                    }
+                }
+                "getDeviceInfo" -> {
+                    try {
+                        val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                        val batLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
+                        val devId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown_device"
+
+                        val info = HashMap<String, Any>()
+                        info["battery"] = batLevel
+                        info["deviceId"] = devId
+                        result.success(info)
+                    } catch (e: Exception) {
+                        val fallback = HashMap<String, Any>()
+                        fallback["battery"] = 100
+                        fallback["deviceId"] = "android_device"
+                        result.success(fallback)
                     }
                 }
                 else -> result.notImplemented()

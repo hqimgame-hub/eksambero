@@ -11,6 +11,9 @@ let projectorQR = null;
 let apkQR = null;
 let dbRef = null;
 
+// Registry of known Device IDs per student { studentKey: deviceId }
+let knownDevices = {};
+
 // Default Session Data
 let sessionData = {
   id: 'sesi-' + new Date().toISOString().slice(0, 10),
@@ -27,19 +30,20 @@ let students = [];
 
 // Realistic Indonesian Student Names for Simulation
 const sampleStudents = [
-  { id: 'std-1', name: 'Ahmad Dani Saputra', class: 'XII MIPA 1', status: 'examining', battery: 88, violations: 0, joinedAt: '07:32' },
-  { id: 'std-2', name: 'Bunga Citra Lestari', class: 'XII MIPA 1', status: 'examining', battery: 74, violations: 0, joinedAt: '07:33' },
-  { id: 'std-3', name: 'Dimas Anggara', class: 'XII MIPA 1', status: 'warning', battery: 45, violations: 2, joinedAt: '07:35' },
-  { id: 'std-4', name: 'Fitri Handayani', class: 'XII MIPA 2', status: 'examining', battery: 92, violations: 0, joinedAt: '07:36' },
-  { id: 'std-5', name: 'Gilang Ramadhan', class: 'XII MIPA 2', status: 'done', battery: 60, violations: 0, joinedAt: '07:30' },
-  { id: 'std-6', name: 'Hana Maulida', class: 'XII MIPA 2', status: 'examining', battery: 81, violations: 0, joinedAt: '07:38' },
-  { id: 'std-7', name: 'Irfan Hakim', class: 'XII IPS 1', status: 'warning', battery: 35, violations: 1, joinedAt: '07:40' },
-  { id: 'std-8', name: 'Jasmine Putri', class: 'XII IPS 1', status: 'examining', battery: 95, violations: 0, joinedAt: '07:41' },
+  { id: 'ahmad_dani_xii_mipa_1', name: 'Ahmad Dani Saputra', class: 'XII MIPA 1', deviceId: 'dev_847120', isDeviceChanged: false, status: 'examining', battery: 88, violations: 0, joinedAt: '07:32' },
+  { id: 'bunga_citra_xii_mipa_1', name: 'Bunga Citra Lestari', class: 'XII MIPA 1', deviceId: 'dev_932140', isDeviceChanged: false, status: 'examining', battery: 74, violations: 0, joinedAt: '07:33' },
+  { id: 'dimas_anggara_xii_mipa_1', name: 'Dimas Anggara', class: 'XII MIPA 1', deviceId: 'dev_112093', isDeviceChanged: true, status: 'warning', battery: 45, violations: 2, joinedAt: '07:35' },
+  { id: 'fitri_handayani_xii_mipa_2', name: 'Fitri Handayani', class: 'XII MIPA 2', deviceId: 'dev_664129', isDeviceChanged: false, status: 'examining', battery: 92, violations: 0, joinedAt: '07:36' },
+  { id: 'gilang_ramadhan_xii_mipa_2', name: 'Gilang Ramadhan', class: 'XII MIPA 2', deviceId: 'dev_889412', isDeviceChanged: false, status: 'done', battery: 60, violations: 0, joinedAt: '07:30' },
+  { id: 'hana_maulida_xii_mipa_2', name: 'Hana Maulida', class: 'XII MIPA 2', deviceId: 'dev_771239', isDeviceChanged: false, status: 'examining', battery: 81, violations: 0, joinedAt: '07:38' },
+  { id: 'irfan_hakim_xii_ips_1', name: 'Irfan Hakim', class: 'XII IPS 1', deviceId: 'dev_449120', isDeviceChanged: false, status: 'warning', battery: 35, violations: 1, joinedAt: '07:40' },
+  { id: 'jasmine_putri_xii_ips_1', name: 'Jasmine Putri', class: 'XII IPS 1', deviceId: 'dev_338910', isDeviceChanged: false, status: 'examining', battery: 95, violations: 0, joinedAt: '07:41' },
 ];
 
 // Initialize on Page Load
 document.addEventListener('DOMContentLoaded', () => {
   loadStoredSession();
+  loadKnownDevices();
   initQRCodes();
   initFirebase();
   renderStudentsTable();
@@ -118,10 +122,25 @@ function initQRCodes() {
 }
 
 function generateQRString() {
-  // Format standard ExamBro QR:
-  // Bisa berupa URL langsung atau payload JSON
-  // Untuk kompatibilitas instan dengan ExamScreen biasa: gunakan sessionData.url
-  return sessionData.url || 'https://forms.gle/sample';
+  const baseUrl = sessionData.url || 'https://forms.gle/sample';
+  const configStr = localStorage.getItem('exambro_firebase_config');
+
+  // Jika guru sudah mengatur Firebase, sematkan URL database di hash payload
+  if (configStr) {
+    try {
+      const cfg = JSON.parse(configStr);
+      if (cfg.databaseURL) {
+        const payload = JSON.stringify({
+          db: cfg.databaseURL,
+          pin: sessionData.pin,
+          title: sessionData.title
+        });
+        return `${baseUrl}#exambro=${encodeURIComponent(payload)}`;
+      }
+    } catch (_) {}
+  }
+
+  return baseUrl;
 }
 
 function updateQRCodes() {
@@ -145,6 +164,17 @@ function loadStoredSession() {
   updateProjectorLabels();
 }
 
+function loadKnownDevices() {
+  const saved = localStorage.getItem('exambro_known_devices');
+  if (saved) {
+    try { knownDevices = JSON.parse(saved); } catch (_) {}
+  }
+}
+
+function saveKnownDevices() {
+  localStorage.setItem('exambro_known_devices', JSON.stringify(knownDevices));
+}
+
 function saveAndPublishSession() {
   sessionData.title = document.getElementById('input-exam-title').value.trim() || 'Ujian Tanpa Judul';
   sessionData.url = document.getElementById('input-exam-url').value.trim();
@@ -157,7 +187,6 @@ function saveAndPublishSession() {
   updateProjectorLabels();
   updateQRCodes();
 
-  // Kirim ke Firebase jika terhubung
   if (dbRef) {
     dbRef.child('active_session').set(sessionData)
       .then(() => alertToast('Sesi Ujian Berhasil Diterbitkan ke Server!', 'success'))
@@ -185,12 +214,10 @@ function toggleDemoStudents() {
     btn.classList.add('bg-brand-50', 'text-brand-700', 'border-brand-300');
     alertToast('Mode Simulasi Aktif: 8 siswa dummy terhubung.', 'info');
 
-    // Simulate occasional heartbeats / violations
     demoInterval = setInterval(() => {
       if (!isDemoMode) return;
       const randIdx = Math.floor(Math.random() * students.length);
       const std = students[randIdx];
-      // Randomly fluctuate battery or flag warning
       if (Math.random() > 0.7 && std.status === 'examining') {
         std.battery = Math.max(10, std.battery - 1);
       }
@@ -246,26 +273,44 @@ function renderStudentsTable() {
       </span>`;
     }
 
+    // Indikator Ganti HP
+    let deviceBadge = '';
+    if (s.isDeviceChanged) {
+      deviceBadge = `
+        <div class="mt-1">
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            <i class="fa-solid fa-mobile-screen-button mr-1"></i> Ganti HP Terdeteksi
+          </span>
+          <button onclick="allowDeviceChange('${s.id}')" class="ml-1 text-[10px] font-bold text-brand-600 underline hover:text-brand-800">
+            Izinkan
+          </button>
+        </div>
+      `;
+    }
+
     let batteryIcon = 'fa-battery-full text-emerald-500';
     if (s.battery < 20) batteryIcon = 'fa-battery-empty text-red-500';
     else if (s.battery < 50) batteryIcon = 'fa-battery-half text-amber-500';
 
     return `
       <tr class="hover:bg-slate-50/80 transition ${s.status === 'warning' ? 'bg-red-50/30' : ''}">
-        <td class="px-6 py-4 font-semibold text-slate-900">${s.name}</td>
+        <td class="px-6 py-4">
+          <div class="font-semibold text-slate-900">${s.name}</div>
+          ${deviceBadge}
+        </td>
         <td class="px-6 py-4 text-slate-600">${s.class}</td>
         <td class="px-6 py-4">${statusBadge}</td>
         <td class="px-6 py-4 font-mono text-xs">
           <i class="fa-solid ${batteryIcon} mr-1.5"></i>${s.battery}%
         </td>
-        <td class="px-6 py-4 text-xs text-slate-500">${s.joinedAt}</td>
+        <td class="px-6 py-4 text-xs text-slate-500">${s.joinedAt || '-'}</td>
         <td class="px-6 py-4 text-center">
           ${s.violations > 0 
-            ? `<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">${s.violations}x</span>` 
+            ? `<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse">${s.violations}x</span>` 
             : `<span class="text-xs text-slate-400">-</span>`}
         </td>
-        <td class="px-6 py-4 text-right">
-          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition">
+        <td class="px-6 py-4 text-right space-x-1">
+          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition" title="Buka Kunci Layar HP Siswa">
             <i class="fa-solid fa-lock-open mr-1"></i>Buka Kunci
           </button>
         </td>
@@ -289,7 +334,22 @@ function updateMetrics() {
   document.getElementById('active-student-badge').innerText = active;
 }
 
-// ----------------- ACTIONS (UNLOCK & EXPORT) -----------------
+// ----------------- ACTIONS (GANTI HP, UNLOCK, EXPORT) -----------------
+function allowDeviceChange(studentId) {
+  const std = students.find(s => s.id === studentId);
+  if (!std) return;
+
+  if (confirm(`Izinkan siswa ${std.name} berganti perangkat HP baru?`)) {
+    std.isDeviceChanged = false;
+    if (std.deviceId) {
+      knownDevices[studentId] = std.deviceId;
+      saveKnownDevices();
+    }
+    renderStudentsTable();
+    alertToast(`Perangkat baru untuk ${std.name} telah diizinkan.`, 'success');
+  }
+}
+
 function unlockStudent(studentId) {
   const std = students.find(s => s.id === studentId);
   if (!std) return;
@@ -317,6 +377,9 @@ function unlockAllStudents() {
     updateMetrics();
 
     if (dbRef) {
+      students.forEach(s => {
+        dbRef.child(`students/${s.id}/status`).set('unlocked');
+      });
       dbRef.child('active_session/force_unlock').set(true);
     }
     alertToast('Semua siswa telah diizinkan keluar ujian.', 'success');
@@ -330,10 +393,10 @@ function exportToCSV() {
   }
 
   let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "ID,Nama Siswa,Kelas,Status,Baterai,Waktu Masuk,Jumlah Pelanggaran\n";
+  csvContent += "ID,Nama Siswa,Kelas,Device ID,Status,Baterai,Waktu Masuk,Jumlah Pelanggaran\n";
 
   students.forEach(s => {
-    csvContent += `"${s.id}","${s.name}","${s.class}","${s.status}","${s.battery}%","${s.joinedAt}","${s.violations}"\n`;
+    csvContent += `"${s.id}","${s.name}","${s.class}","${s.deviceId || '-'}","${s.status}","${s.battery}%","${s.joinedAt || '-'}","${s.violations || 0}"\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
@@ -347,11 +410,11 @@ function exportToCSV() {
   alertToast('File rekap CSV berhasil diunduh.', 'success');
 }
 
-// ----------------- FIREBASE INTEGRATION -----------------
+// ----------------- FIREBASE REALTIME LISTENER -----------------
 function initFirebase() {
   const configStr = localStorage.getItem('exambro_firebase_config');
   if (!configStr) {
-    setConnectionStatus(false, 'Mode Lokal / Standalone');
+    setConnectionStatus(false, 'Mode Standalone');
     return;
   }
 
@@ -365,15 +428,36 @@ function initFirebase() {
 
     setConnectionStatus(true, 'Firebase Terhubung');
 
-    // Listen to real students joining
+    // Dengarkan data siswa secara live
     dbRef.child('students').on('value', (snapshot) => {
-      if (isDemoMode) return; // Keep demo if user deliberately turned on demo
+      if (isDemoMode) return;
       const data = snapshot.val();
       if (data) {
-        students = Object.keys(data).map(key => ({
-          id: key,
-          ...data[key]
-        }));
+        students = Object.keys(data).map(key => {
+          const item = data[key];
+          const prevDev = knownDevices[key];
+          let isChanged = false;
+
+          // Deteksi pergantian HP
+          if (prevDev && item.deviceId && prevDev !== item.deviceId) {
+            isChanged = true;
+          } else if (!prevDev && item.deviceId) {
+            knownDevices[key] = item.deviceId;
+            saveKnownDevices();
+          }
+
+          return {
+            id: key,
+            name: item.name || 'Siswa',
+            class: item.class || '-',
+            deviceId: item.deviceId || 'unknown',
+            isDeviceChanged: isChanged,
+            status: item.status || 'examining',
+            battery: item.battery || 100,
+            violations: item.violations || 0,
+            joinedAt: item.lastPing ? item.lastPing.slice(11, 16) : '-'
+          };
+        });
       } else {
         students = [];
       }
@@ -438,7 +522,7 @@ function saveFirebaseConfig() {
 function useLocalModeOnly() {
   localStorage.removeItem('exambro_firebase_config');
   closeConfigModal();
-  alertToast('Beralih ke Mode Lokal Standalone.', 'info');
+  alertToast('Beralih ke Mode Standalone.', 'info');
   setTimeout(() => window.location.reload(), 800);
 }
 

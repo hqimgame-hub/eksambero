@@ -12,6 +12,8 @@ dependencies:
   webview_flutter: ^4.10.0
   mobile_scanner: ^6.0.0
   wakelock_plus: ^1.2.8
+  shared_preferences: ^2.2.3
+  http: ^1.2.1
   cupertino_icons: ^1.0.6
 
 dev_dependencies:
