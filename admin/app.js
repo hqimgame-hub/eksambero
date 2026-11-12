@@ -1,50 +1,73 @@
 // ==========================================
-// ExamBro Admin Dashboard Core Logic
+// ExamBro Admin Dashboard Core Logic (SAT & Token System)
 // ==========================================
 
-// Global State
-let currentTab = 'session';
+let currentTab = 'schedule';
 let isDemoMode = false;
 let demoInterval = null;
-let sessionQR = null;
-let projectorQR = null;
+let boardQR = null;
 let apkQR = null;
 let dbRef = null;
 
-// Registry of known Device IDs per student { studentKey: deviceId }
 let knownDevices = {};
 
-// Default Session Data
-let sessionData = {
-  id: 'sesi-' + new Date().toISOString().slice(0, 10),
-  title: 'Penilaian Akhir Semester - Matematika',
-  url: 'https://forms.gle/sample-exam-link',
-  pin: '123',
-  duration: 90,
-  isActive: true,
-  createdAt: new Date().toISOString()
-};
+// Daftar Jadwal Ujian Pre-Scheduling (SAT / PAS)
+let examSchedules = [
+  {
+    id: 'exam-1',
+    title: 'Matematika Wajib - Kelas XII',
+    token: 'MAT12',
+    url: 'https://forms.gle/sample-matematika',
+    pin: '123',
+    date: new Date().toISOString().slice(0, 10),
+    startTime: '07:30',
+    endTime: '09:30',
+    isActive: true
+  },
+  {
+    id: 'exam-2',
+    title: 'Bahasa Indonesia - Kelas XII',
+    token: 'BINDO',
+    url: 'https://forms.gle/sample-bindo',
+    pin: '123',
+    date: new Date().toISOString().slice(0, 10),
+    startTime: '10:00',
+    endTime: '11:30',
+    isActive: true
+  },
+  {
+    id: 'exam-3',
+    title: 'Pendidikan Agama Islam - Kelas XII',
+    token: 'PAI99',
+    url: 'https://forms.gle/sample-pai',
+    pin: '123',
+    date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), // Besok
+    startTime: '07:30',
+    endTime: '09:00',
+    isActive: true
+  }
+];
 
-// Students List (Live or Demo)
+let activeExamId = 'exam-1';
 let students = [];
 
-// Realistic Indonesian Student Names for Simulation
+// Sample data siswa simulasi
 const sampleStudents = [
   { id: 'ahmad_dani_xii_mipa_1', name: 'Ahmad Dani Saputra', class: 'XII MIPA 1', deviceId: 'dev_847120', isDeviceChanged: false, status: 'examining', battery: 88, violations: 0, joinedAt: '07:32' },
   { id: 'bunga_citra_xii_mipa_1', name: 'Bunga Citra Lestari', class: 'XII MIPA 1', deviceId: 'dev_932140', isDeviceChanged: false, status: 'examining', battery: 74, violations: 0, joinedAt: '07:33' },
   { id: 'dimas_anggara_xii_mipa_1', name: 'Dimas Anggara', class: 'XII MIPA 1', deviceId: 'dev_112093', isDeviceChanged: true, status: 'warning', battery: 45, violations: 2, joinedAt: '07:35' },
   { id: 'fitri_handayani_xii_mipa_2', name: 'Fitri Handayani', class: 'XII MIPA 2', deviceId: 'dev_664129', isDeviceChanged: false, status: 'examining', battery: 92, violations: 0, joinedAt: '07:36' },
   { id: 'gilang_ramadhan_xii_mipa_2', name: 'Gilang Ramadhan', class: 'XII MIPA 2', deviceId: 'dev_889412', isDeviceChanged: false, status: 'done', battery: 60, violations: 0, joinedAt: '07:30' },
-  { id: 'hana_maulida_xii_mipa_2', name: 'Hana Maulida', class: 'XII MIPA 2', deviceId: 'dev_771239', isDeviceChanged: false, status: 'examining', battery: 81, violations: 0, joinedAt: '07:38' },
-  { id: 'irfan_hakim_xii_ips_1', name: 'Irfan Hakim', class: 'XII IPS 1', deviceId: 'dev_449120', isDeviceChanged: false, status: 'warning', battery: 35, violations: 1, joinedAt: '07:40' },
-  { id: 'jasmine_putri_xii_ips_1', name: 'Jasmine Putri', class: 'XII IPS 1', deviceId: 'dev_338910', isDeviceChanged: false, status: 'examining', battery: 95, violations: 0, joinedAt: '07:41' },
+  { id: 'hana_maulida_xii_mipa_2', name: 'Hana Maulida', class: 'XII MIPA 2', deviceId: 'dev_771239', isDeviceChanged: false, status: 'examining', battery: 81, violations: 0, joinedAt: '07:38' }
 ];
 
-// Initialize on Page Load
 document.addEventListener('DOMContentLoaded', () => {
-  loadStoredSession();
+  loadStoredSchedules();
   loadKnownDevices();
-  initQRCodes();
+  renderScheduleCards();
+  populateActiveExamSelect();
+  updateBoardDisplay();
+  initAPKQR();
   initFirebase();
   renderStudentsTable();
   updateMetrics();
@@ -53,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ----------------- TAB SWITCHING -----------------
 function switchTab(tabId) {
   currentTab = tabId;
-  const tabs = ['session', 'projector', 'monitoring', 'download'];
+  const tabs = ['schedule', 'board', 'monitoring', 'download'];
   
   tabs.forEach(t => {
     const section = document.getElementById(`tab-${t}`);
@@ -74,96 +97,250 @@ function switchTab(tabId) {
     }
   });
 
-  if (tabId === 'projector' || tabId === 'session') {
-    updateQRCodes();
+  if (tabId === 'board') {
+    updateBoardDisplay();
   }
 }
 
-// ----------------- QR CODE GENERATOR -----------------
-function initQRCodes() {
-  const qrData = generateQRString();
-
-  // Small Session Preview QR
-  const sessionBox = document.getElementById('session-qr-preview');
-  sessionBox.innerHTML = '';
-  sessionQR = new QRCode(sessionBox, {
-    text: qrData,
-    width: 170,
-    height: 170,
-    colorDark: "#1e1b4b",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M
-  });
-
-  // Big Projector QR
-  const projBox = document.getElementById('projector-qr-container');
-  projBox.innerHTML = '';
-  projectorQR = new QRCode(projBox, {
-    text: qrData,
-    width: 280,
-    height: 280,
-    colorDark: "#0f172a",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.H
-  });
-
-  // APK Download QR
-  const apkBox = document.getElementById('apk-qr-container');
-  apkBox.innerHTML = '';
-  const apkUrl = window.location.origin + window.location.pathname;
-  apkQR = new QRCode(apkBox, {
-    text: apkUrl,
-    width: 180,
-    height: 180,
-    colorDark: "#065f46",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M
-  });
+// ----------------- SCHEDULES CRUD (PRE-SCHEDULING) -----------------
+function loadStoredSchedules() {
+  const saved = localStorage.getItem('exambro_schedules');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        examSchedules = parsed;
+      }
+    } catch (_) {}
+  }
 }
 
-function generateQRString() {
-  const baseUrl = sessionData.url || 'https://forms.gle/sample';
-  const configStr = localStorage.getItem('exambro_firebase_config');
+function saveSchedulesToStorage() {
+  localStorage.setItem('exambro_schedules', JSON.stringify(examSchedules));
+  if (dbRef) {
+    // Sinkronkan seluruh jadwal token ke Firebase agar HP siswa bisa langsung memvalidasi
+    dbRef.child('schedules').set(examSchedules);
+  }
+}
 
-  // Jika guru sudah mengatur Firebase, sematkan URL database di hash payload
+function renderScheduleCards() {
+  const container = document.getElementById('exam-cards-container');
+  const emptyState = document.getElementById('empty-schedule-state');
+
+  if (examSchedules.length === 0) {
+    container.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+
+  emptyState.classList.add('hidden');
+  container.innerHTML = examSchedules.map(exam => {
+    return `
+      <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 hover:shadow-md transition flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <span class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-brand-50 text-brand-700 border border-brand-200 font-mono">
+              TOKEN: ${exam.token}
+            </span>
+            <div class="flex items-center space-x-1">
+              <button onclick="editExam('${exam.id}')" class="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-50 transition" title="Edit Jadwal">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button onclick="deleteExam('${exam.id}')" class="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-50 transition" title="Hapus Jadwal">
+                <i class="fa-regular fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+
+          <h3 class="font-bold text-slate-900 text-base leading-snug">${exam.title}</h3>
+          
+          <div class="mt-3 space-y-1.5 text-xs text-slate-500">
+            <div class="flex items-center">
+              <i class="fa-regular fa-calendar mr-2 text-slate-400 w-4"></i>
+              <span>${exam.date || 'Setiap Hari'}</span>
+            </div>
+            <div class="flex items-center">
+              <i class="fa-regular fa-clock mr-2 text-slate-400 w-4"></i>
+              <span>${exam.startTime} - ${exam.endTime} WIB</span>
+            </div>
+            <div class="flex items-center text-slate-400 truncate">
+              <i class="fa-solid fa-link mr-2 text-slate-400 w-4 shrink-0"></i>
+              <span class="truncate">${exam.url}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <span class="text-[11px] font-semibold text-slate-500">PIN Guru: <code class="text-slate-800">${exam.pin || '123'}</code></span>
+          <button onclick="presentOnBoard('${exam.id}')" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition flex items-center">
+            <i class="fa-solid fa-chalkboard-user mr-1.5 text-amber-400"></i>Buka di Papan
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openAddExamModal() {
+  document.getElementById('modal-exam-heading').innerText = 'Tambah Jadwal Mata Pelajaran';
+  document.getElementById('form-exam-id').value = '';
+  document.getElementById('form-exam-title').value = '';
+  document.getElementById('form-exam-token').value = generateSuggestedToken();
+  document.getElementById('form-exam-url').value = '';
+  document.getElementById('form-exam-pin').value = '123';
+  document.getElementById('form-exam-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('form-exam-start').value = '07:30';
+  document.getElementById('form-exam-end').value = '09:30';
+  document.getElementById('exam-modal').classList.remove('hidden');
+}
+
+function editExam(id) {
+  const exam = examSchedules.find(e => e.id === id);
+  if (!exam) return;
+
+  document.getElementById('modal-exam-heading').innerText = 'Edit Jadwal Mata Pelajaran';
+  document.getElementById('form-exam-id').value = exam.id;
+  document.getElementById('form-exam-title').value = exam.title;
+  document.getElementById('form-exam-token').value = exam.token;
+  document.getElementById('form-exam-url').value = exam.url;
+  document.getElementById('form-exam-pin').value = exam.pin || '123';
+  document.getElementById('form-exam-date').value = exam.date || '';
+  document.getElementById('form-exam-start').value = exam.startTime || '07:30';
+  document.getElementById('form-exam-end').value = exam.endTime || '09:30';
+  document.getElementById('exam-modal').classList.remove('hidden');
+}
+
+function closeExamModal() {
+  document.getElementById('exam-modal').classList.add('hidden');
+}
+
+function generateRandomToken() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let token = '';
+  for (let i = 0; i < 5; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  document.getElementById('form-exam-token').value = token;
+}
+
+function generateSuggestedToken() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let token = 'EX';
+  for (let i = 0; i < 3; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+function saveExamSchedule() {
+  const title = document.getElementById('form-exam-title').value.trim();
+  const token = document.getElementById('form-exam-token').value.trim().toUpperCase();
+  const url = document.getElementById('form-exam-url').value.trim();
+  const pin = document.getElementById('form-exam-pin').value.trim() || '123';
+  const date = document.getElementById('form-exam-date').value;
+  const startTime = document.getElementById('form-exam-start').value;
+  const endTime = document.getElementById('form-exam-end').value;
+  const id = document.getElementById('form-exam-id').value;
+
+  if (!title || !token || !url) {
+    alertToast('Mohon lengkapi Nama Mapel, Token, dan Tautan Soal!', 'warning');
+    return;
+  }
+
+  if (id) {
+    const idx = examSchedules.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      examSchedules[idx] = { id, title, token, url, pin, date, startTime, endTime, isActive: true };
+    }
+  } else {
+    const newId = 'exam-' + Date.now();
+    examSchedules.push({ id: newId, title, token, url, pin, date, startTime, endTime, isActive: true });
+  }
+
+  saveSchedulesToStorage();
+  renderScheduleCards();
+  populateActiveExamSelect();
+  closeExamModal();
+  alertToast('Jadwal Ujian berhasil disimpan!', 'success');
+}
+
+function deleteExam(id) {
+  if (confirm('Hapus jadwal mata pelajaran ini?')) {
+    examSchedules = examSchedules.filter(e => e.id !== id);
+    saveSchedulesToStorage();
+    renderScheduleCards();
+    populateActiveExamSelect();
+    alertToast('Jadwal berhasil dihapus.', 'info');
+  }
+}
+
+// ----------------- PAPAN TOKEN KELAS DISPLAY -----------------
+function populateActiveExamSelect() {
+  const select = document.getElementById('select-active-exam');
+  select.innerHTML = examSchedules.map(e => `
+    <option value="${e.id}" ${e.id === activeExamId ? 'selected' : ''}>${e.token} - ${e.title}</option>
+  `).join('');
+}
+
+function changeActiveBoardExam(id) {
+  activeExamId = id;
+  updateBoardDisplay();
+}
+
+function presentOnBoard(id) {
+  activeExamId = id;
+  populateActiveExamSelect();
+  switchTab('board');
+}
+
+function updateBoardDisplay() {
+  const exam = examSchedules.find(e => e.id === activeExamId) || examSchedules[0];
+  if (!exam) return;
+
+  document.getElementById('board-exam-title').innerText = exam.title;
+  document.getElementById('board-exam-time').innerText = `Tanggal: ${exam.date || 'Hari Ini'} • Jam: ${exam.startTime} - ${exam.endTime} WIB`;
+  document.getElementById('board-exam-token').innerText = exam.token;
+
+  // Render QR Code untuk opsi LCD
+  const qrContainer = document.getElementById('board-qr-container');
+  qrContainer.innerHTML = '';
+  
+  // Format payload QR: Memuat URL soal dan token
+  let qrText = exam.url;
+  const configStr = localStorage.getItem('exambro_firebase_config');
   if (configStr) {
     try {
       const cfg = JSON.parse(configStr);
       if (cfg.databaseURL) {
-        const payload = JSON.stringify({
+        qrText = `${exam.url}#exambro=${encodeURIComponent(JSON.stringify({
+          token: exam.token,
+          title: exam.title,
           db: cfg.databaseURL,
-          pin: sessionData.pin,
-          title: sessionData.title
-        });
-        return `${baseUrl}#exambro=${encodeURIComponent(payload)}`;
+          pin: exam.pin
+        }))}`;
       }
     } catch (_) {}
   }
 
-  return baseUrl;
+  boardQR = new QRCode(qrContainer, {
+    text: qrText,
+    width: 170,
+    height: 170,
+    colorDark: "#0f172a",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.M
+  });
 }
 
-function updateQRCodes() {
-  const text = generateQRString();
-  if (sessionQR) sessionQR.makeCode(text);
-  if (projectorQR) projectorQR.makeCode(text);
+function copyCurrentToken() {
+  const exam = examSchedules.find(e => e.id === activeExamId);
+  if (!exam) return;
+  navigator.clipboard.writeText(exam.token).then(() => {
+    alertToast(`Token ${exam.token} disalin ke papan klip!`, 'success');
+  });
 }
 
-// ----------------- SESSION MANAGEMENT -----------------
-function loadStoredSession() {
-  const saved = localStorage.getItem('exambro_session');
-  if (saved) {
-    try {
-      sessionData = JSON.parse(saved);
-      document.getElementById('input-exam-title').value = sessionData.title || '';
-      document.getElementById('input-exam-url').value = sessionData.url || '';
-      document.getElementById('input-exam-pin').value = sessionData.pin || '123';
-      document.getElementById('input-exam-duration').value = sessionData.duration || 90;
-    } catch (_) {}
-  }
-  updateProjectorLabels();
-}
-
+// ----------------- LIVE MONITORING & SIMULATION -----------------
 function loadKnownDevices() {
   const saved = localStorage.getItem('exambro_known_devices');
   if (saved) {
@@ -175,34 +352,6 @@ function saveKnownDevices() {
   localStorage.setItem('exambro_known_devices', JSON.stringify(knownDevices));
 }
 
-function saveAndPublishSession() {
-  sessionData.title = document.getElementById('input-exam-title').value.trim() || 'Ujian Tanpa Judul';
-  sessionData.url = document.getElementById('input-exam-url').value.trim();
-  sessionData.pin = document.getElementById('input-exam-pin').value.trim() || '123';
-  sessionData.duration = parseInt(document.getElementById('input-exam-duration').value) || 90;
-  sessionData.isActive = true;
-
-  localStorage.setItem('exambro_session', JSON.stringify(sessionData));
-  
-  updateProjectorLabels();
-  updateQRCodes();
-
-  if (dbRef) {
-    dbRef.child('active_session').set(sessionData)
-      .then(() => alertToast('Sesi Ujian Berhasil Diterbitkan ke Server!', 'success'))
-      .catch((err) => alertToast('Tersimpan di lokal: ' + err.message, 'warning'));
-  } else {
-    alertToast('Sesi Ujian Berhasil Disimpan & QR Code Diperbarui!', 'success');
-  }
-}
-
-function updateProjectorLabels() {
-  document.getElementById('proj-exam-title').innerText = sessionData.title;
-  document.getElementById('proj-exam-duration').innerText = `${sessionData.duration} Menit`;
-  document.getElementById('proj-exam-pin').innerText = sessionData.pin;
-}
-
-// ----------------- LIVE MONITORING & SIMULATION -----------------
 function toggleDemoStudents() {
   isDemoMode = !isDemoMode;
   const btn = document.getElementById('btn-toggle-demo');
@@ -210,9 +359,9 @@ function toggleDemoStudents() {
 
   if (isDemoMode) {
     students = JSON.parse(JSON.stringify(sampleStudents));
-    text.innerText = 'Matikan Data Simulasi';
+    text.innerText = 'Matikan Simulasi';
     btn.classList.add('bg-brand-50', 'text-brand-700', 'border-brand-300');
-    alertToast('Mode Simulasi Aktif: 8 siswa dummy terhubung.', 'info');
+    alertToast('Mode Simulasi Aktif.', 'info');
 
     demoInterval = setInterval(() => {
       if (!isDemoMode) return;
@@ -227,7 +376,7 @@ function toggleDemoStudents() {
 
   } else {
     students = [];
-    text.innerText = 'Aktifkan Siswa Simulasi';
+    text.innerText = 'Data Simulasi';
     btn.classList.remove('bg-brand-50', 'text-brand-700', 'border-brand-300');
     if (demoInterval) clearInterval(demoInterval);
     alertToast('Mode Simulasi Dimatikan.', 'info');
@@ -273,13 +422,12 @@ function renderStudentsTable() {
       </span>`;
     }
 
-    // Indikator Ganti HP
     let deviceBadge = '';
     if (s.isDeviceChanged) {
       deviceBadge = `
         <div class="mt-1">
           <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-            <i class="fa-solid fa-mobile-screen-button mr-1"></i> Ganti HP Terdeteksi
+            <i class="fa-solid fa-mobile-screen-button mr-1"></i> Ganti HP
           </span>
           <button onclick="allowDeviceChange('${s.id}')" class="ml-1 text-[10px] font-bold text-brand-600 underline hover:text-brand-800">
             Izinkan
@@ -309,8 +457,8 @@ function renderStudentsTable() {
             ? `<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse">${s.violations}x</span>` 
             : `<span class="text-xs text-slate-400">-</span>`}
         </td>
-        <td class="px-6 py-4 text-right space-x-1">
-          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition" title="Buka Kunci Layar HP Siswa">
+        <td class="px-6 py-4 text-right">
+          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition">
             <i class="fa-solid fa-lock-open mr-1"></i>Buka Kunci
           </button>
         </td>
@@ -329,12 +477,9 @@ function updateMetrics() {
   document.getElementById('metric-active').innerText = active;
   document.getElementById('metric-violations').innerText = warnings;
   document.getElementById('metric-finished').innerText = done;
-
-  document.getElementById('proj-student-count').innerText = active;
   document.getElementById('active-student-badge').innerText = active;
 }
 
-// ----------------- ACTIONS (GANTI HP, UNLOCK, EXPORT) -----------------
 function allowDeviceChange(studentId) {
   const std = students.find(s => s.id === studentId);
   if (!std) return;
@@ -402,12 +547,27 @@ function exportToCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `Rekap_Ujian_${sessionData.title.replace(/\s+/g, '_')}.csv`);
+  link.setAttribute("download", `Rekap_Ujian_${new Date().toISOString().slice(0, 10)}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 
   alertToast('File rekap CSV berhasil diunduh.', 'success');
+}
+
+// ----------------- APK QR CODE -----------------
+function initAPKQR() {
+  const apkBox = document.getElementById('apk-qr-container');
+  apkBox.innerHTML = '';
+  const apkUrl = window.location.origin + window.location.pathname;
+  apkQR = new QRCode(apkBox, {
+    text: apkUrl,
+    width: 180,
+    height: 180,
+    colorDark: "#065f46",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.M
+  });
 }
 
 // ----------------- FIREBASE REALTIME LISTENER -----------------
@@ -428,7 +588,10 @@ function initFirebase() {
 
     setConnectionStatus(true, 'Firebase Terhubung');
 
-    // Dengarkan data siswa secara live
+    // Sinkronkan jadwal token ke server
+    dbRef.child('schedules').set(examSchedules);
+
+    // Dengarkan aktivitas siswa
     dbRef.child('students').on('value', (snapshot) => {
       if (isDemoMode) return;
       const data = snapshot.val();
@@ -438,7 +601,6 @@ function initFirebase() {
           const prevDev = knownDevices[key];
           let isChanged = false;
 
-          // Deteksi pergantian HP
           if (prevDev && item.deviceId && prevDev !== item.deviceId) {
             isChanged = true;
           } else if (!prevDev && item.deviceId) {

@@ -37,7 +37,7 @@ class ExamBroApp extends StatelessWidget {
   }
 }
 
-// ----------------- HALAMAN DEPAN (INPUT / SCAN) -----------------
+// ----------------- HALAMAN DEPAN (INPUT TOKEN & SCAN) -----------------
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -48,11 +48,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _classController = TextEditingController();
-  final TextEditingController _urlController = TextEditingController();
+  final TextEditingController _tokenController = TextEditingController();
 
   static const MethodChannel _kioskChannel = MethodChannel('com.exambro.app/kiosk');
   String _deviceId = 'device_${DateTime.now().millisecondsSinceEpoch}';
   int _batteryLevel = 100;
+  bool _isValidating = false;
+
+  // URL Firebase Database yang bisa disimpan atau disesuaikan
+  String? _savedFirebaseDbUrl;
 
   @override
   void initState() {
@@ -65,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _nameController.dispose();
     _classController.dispose();
-    _urlController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -74,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _nameController.text = prefs.getString('student_name') ?? '';
       _classController.text = prefs.getString('student_class') ?? '';
-      _urlController.text = prefs.getString('last_exam_url') ?? '';
+      _savedFirebaseDbUrl = prefs.getString('firebase_db_url');
     });
   }
 
@@ -94,97 +98,177 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('student_name', _nameController.text.trim());
     await prefs.setString('student_class', _classController.text.trim());
-    await prefs.setString('last_exam_url', _urlController.text.trim());
+    if (_savedFirebaseDbUrl != null) {
+      await prefs.setString('firebase_db_url', _savedFirebaseDbUrl!);
+    }
   }
 
-  void _mulaiUjian(String url, {String? firebaseDbUrl}) async {
+  // ----------------- PROSES MASUK DENGAN TOKEN -----------------
+  Future<void> _prosesMasukDenganToken() async {
     final name = _nameController.text.trim();
     final studentClass = _classController.text.trim();
+    final token = _tokenController.text.trim().toUpperCase();
 
     if (name.isEmpty || studentClass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.person_outline, color: Colors.white),
-              SizedBox(width: 8),
-              Expanded(child: Text('Lengkapi Nama Siswa dan Kelas/NISN terlebih dahulu!')),
-            ],
-          ),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnackbar('Isi Nama Lengkap dan Kelas/NISN terlebih dahulu!', isError: true);
       return;
     }
 
-    if (url.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Masukkan Link Ujian atau Scan QR terlebih dahulu!'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    if (token.isEmpty) {
+      _showSnackbar('Ketik TOKEN Ujian yang tertulis di papan tulis kelas!', isError: true);
       return;
     }
 
+    setState(() => _isValidating = true);
     await _saveStudentInfo();
 
-    String formattedUrl = url.trim();
-    String? dbUrl = firebaseDbUrl;
+    String examUrl = '';
+    String examTitle = 'Ujian Siswa';
+    String supervisorPin = '123';
+    String? dbUrl = _savedFirebaseDbUrl;
 
-    // Deteksi jika QR membawa payload metadata
-    if (formattedUrl.contains('#exambro=')) {
-      final parts = formattedUrl.split('#exambro=');
-      formattedUrl = parts[0];
+    // 1. Coba periksa ke server Firebase jika ada
+    if (dbUrl != null && dbUrl.isNotEmpty) {
       try {
-        final meta = jsonDecode(Uri.decodeComponent(parts[1]));
-        if (meta is Map && meta.containsKey('db')) {
-          dbUrl = meta['db'];
-        }
-      } catch (_) {}
-    } else if (formattedUrl.startsWith('{') && formattedUrl.endsWith('}')) {
-      try {
-        final meta = jsonDecode(formattedUrl);
-        if (meta is Map) {
-          formattedUrl = meta['url'] ?? '';
-          dbUrl = meta['db'];
+        String cleanDb = dbUrl.trim();
+        if (cleanDb.endsWith('/')) cleanDb = cleanDb.substring(0, cleanDb.length - 1);
+
+        final res = await http.get(Uri.parse('$cleanDb/exambro/schedules.json')).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data is List) {
+            for (final item in data) {
+              if (item is Map && (item['token'] as String?)?.toUpperCase() == token) {
+                examUrl = item['url'] ?? '';
+                examTitle = item['title'] ?? examTitle;
+                supervisorPin = item['pin'] ?? supervisorPin;
+                break;
+              }
+            }
+          } else if (data is Map) {
+            for (final key in data.keys) {
+              final item = data[key];
+              if (item is Map && (item['token'] as String?)?.toUpperCase() == token) {
+                examUrl = item['url'] ?? '';
+                examTitle = item['title'] ?? examTitle;
+                supervisorPin = item['pin'] ?? supervisorPin;
+                break;
+              }
+            }
+          }
         }
       } catch (_) {}
     }
 
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = 'https://$formattedUrl';
+    // 2. Fallback jika offline atau token bawaan
+    if (examUrl.isEmpty) {
+      // Cek apakah token merupakan link langsung (jika siswa menempelkan link)
+      if (token.startsWith('HTTP://') || token.startsWith('HTTPS://')) {
+        examUrl = token.toLowerCase();
+      } else if (token == 'MAT12') {
+        examUrl = 'https://forms.gle/sample-matematika';
+        examTitle = 'Matematika Wajib';
+      } else if (token == 'BINDO') {
+        examUrl = 'https://forms.gle/sample-bindo';
+        examTitle = 'Bahasa Indonesia';
+      } else if (token == 'PAI99') {
+        examUrl = 'https://forms.gle/sample-pai';
+        examTitle = 'Pendidikan Agama Islam';
+      }
     }
 
-    if (!mounted) return;
+    setState(() => _isValidating = false);
+
+    if (examUrl.isEmpty) {
+      _showSnackbar('Token "$token" tidak ditemukan atau belum aktif. Periksa papan tulis kelas!', isError: true);
+      return;
+    }
+
+    if (!examUrl.startsWith('http://') && !examUrl.startsWith('https://')) {
+      examUrl = 'https://$examUrl';
+    }
+
+    _bukaLayarUjian(examUrl, examTitle, supervisorPin, dbUrl);
+  }
+
+  void _bukaLayarUjian(String url, String title, String pin, String? dbUrl) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ExamScreen(
-          examUrl: formattedUrl,
-          studentName: name,
-          studentClass: studentClass,
+          examUrl: url,
+          examTitle: title,
+          studentName: _nameController.text.trim(),
+          studentClass: _classController.text.trim(),
           deviceId: _deviceId,
           initialBattery: _batteryLevel,
+          supervisorPin: pin,
           firebaseDbUrl: dbUrl,
         ),
       ),
     );
   }
 
+  // ----------------- SCAN QR (OPSIONAL JIKA ADA LCD) -----------------
   void _bukaScanner() {
+    final name = _nameController.text.trim();
+    final studentClass = _classController.text.trim();
+
+    if (name.isEmpty || studentClass.isEmpty) {
+      _showSnackbar('Isi Nama Lengkap dan Kelas terlebih dahulu!', isError: true);
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ScannerScreen(
-          onScanned: (result) {
+          onScanned: (result) async {
             Navigator.pop(context);
-            _urlController.text = result;
-            _mulaiUjian(result);
+
+            String formattedUrl = result.trim();
+            String? dbUrl = _savedFirebaseDbUrl;
+            String examTitle = 'Ujian Terjadwal';
+            String pin = '123';
+
+            if (formattedUrl.contains('#exambro=')) {
+              final parts = formattedUrl.split('#exambro=');
+              formattedUrl = parts[0];
+              try {
+                final meta = jsonDecode(Uri.decodeComponent(parts[1]));
+                if (meta is Map) {
+                  dbUrl = meta['db'] ?? dbUrl;
+                  examTitle = meta['title'] ?? examTitle;
+                  pin = meta['pin'] ?? pin;
+                  if (meta['token'] != null) {
+                    _tokenController.text = meta['token'];
+                  }
+                }
+              } catch (_) {}
+            }
+
+            if (dbUrl != null) {
+              _savedFirebaseDbUrl = dbUrl;
+            }
+            await _saveStudentInfo();
+
+            if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+              formattedUrl = 'https://$formattedUrl';
+            }
+
+            _bukaLayarUjian(formattedUrl, examTitle, pin, dbUrl);
           },
         ),
+      ),
+    );
+  }
+
+  void _showSnackbar(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.redAccent : Colors.emerald,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -199,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
         title: const Text(
-          'ExamBro Client Ujian',
+          'ExamBro Client Siswa',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: true,
@@ -214,11 +298,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo / Shield
+                  // Shield Icon
                   Center(
                     child: Container(
-                      width: 80,
-                      height: 80,
+                      width: 76,
+                      height: 76,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: theme.colorScheme.primary.withAlpha(25),
@@ -226,31 +310,31 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Center(
                         child: Icon(
                           Icons.verified_user_rounded,
-                          size: 44,
+                          size: 42,
                           color: theme.colorScheme.primary,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   const Text(
-                    'Identitas Siswa Ujian',
+                    'Asesmen Sekolah (SAT/PAS)',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Data identitas ini dikirim otomatis ke Dashboard Guru untuk pengawasan ujian real-time.',
+                    'Masukkan Nama dan TOKEN yang tertera di papan tulis kelas untuk memulai ujian.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.4),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 22),
 
                   // Card Form Siswa
                   Card(
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       side: BorderSide(color: Colors.grey.shade200),
                     ),
                     color: Colors.white,
@@ -263,7 +347,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             'Nama Lengkap Siswa',
                             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF334155)),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           TextField(
                             controller: _nameController,
                             textCapitalization: TextCapitalization.words,
@@ -282,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             'Kelas / NISN',
                             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF334155)),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           TextField(
                             controller: _classController,
                             decoration: InputDecoration(
@@ -296,50 +380,78 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 14),
 
-                          const Text(
-                            'Alamat / Link Ujian (Opsional jika Scan QR)',
-                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF334155)),
+                          // BOX TOKEN BESAR
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.between,
+                            children: [
+                              const Text(
+                                'TOKEN UJIAN DI PAPAN TULIS',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1565C0)),
+                              ),
+                              Text(
+                                'Tanya Pengawas',
+                                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           TextField(
-                            controller: _urlController,
-                            keyboardType: TextInputType.url,
+                            controller: _tokenController,
+                            textCapitalization: TextCapitalization.characters,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 4,
+                              fontFamily: 'monospace',
+                              color: Color(0xFF1E293B),
+                            ),
                             decoration: InputDecoration(
-                              hintText: 'https://forms.gle/... atau scan proyektor',
-                              prefixIcon: const Icon(Icons.link_rounded),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              hintText: 'CONTOH: MAT12',
+                              hintStyle: TextStyle(letterSpacing: 2, fontSize: 15, color: Colors.grey[400]),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: Color(0xFF1565C0), width: 2),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: Color(0xFF1565C0), width: 2.5),
+                              ),
                               filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
+                              fillColor: const Color(0xFFEEF2FF),
                             ),
                           ),
                           const SizedBox(height: 20),
 
+                          // Action Buttons
                           Row(
                             children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _bukaScanner,
-                                  icon: const Icon(Icons.qr_code_scanner_rounded),
-                                  label: const Text('Scan QR Guru'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
+                              // Scan QR Button (Opsional jika ada LCD)
+                              IconButton.outlined(
+                                onPressed: _bukaScanner,
+                                icon: const Icon(Icons.qr_code_scanner_rounded),
+                                tooltip: 'Scan QR (Jika ada proyektor LCD)',
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.all(14),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 10),
+                              // Mulai Ujian Button
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  onPressed: () => _mulaiUjian(_urlController.text),
-                                  icon: const Icon(Icons.play_arrow_rounded),
-                                  label: const Text('Mulai Ujian'),
+                                  onPressed: _isValidating ? null : _prosesMasukDenganToken,
+                                  icon: _isValidating
+                                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                      : const Icon(Icons.play_arrow_rounded),
+                                  label: Text(_isValidating ? 'Memeriksa Token...' : 'Mulai Ujian Sekarang'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: theme.colorScheme.primary,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 14),
                                     elevation: 2,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                   ),
                                 ),
                               ),
@@ -350,17 +462,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.devices_rounded, size: 14, color: Colors.grey[500]),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Device ID: ${_deviceId.substring(0, _deviceId.length > 8 ? 8 : _deviceId.length)}...',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'),
-                      ),
-                    ],
+                  const SizedBox(height: 18),
+                  Center(
+                    child: Text(
+                      'ExamBro • Aman, Terkunci & Mendukung Semua Ruang Kelas',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
                   ),
                 ],
               ),
@@ -372,7 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ----------------- HALAMAN SCANNER QR -----------------
+// ----------------- SCANNER QR (OPSIONAL) -----------------
 class ScannerScreen extends StatefulWidget {
   final Function(String) onScanned;
   const ScannerScreen({super.key, required this.onScanned});
@@ -444,11 +551,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     child: Text(
                       'Arahkan kamera ke QR Proyektor Guru',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        backgroundColor: Colors.black54,
-                      ),
+                      style: TextStyle(color: Colors.white, fontSize: 12, backgroundColor: Colors.black54),
                     ),
                   ),
                 ],
@@ -464,19 +567,23 @@ class _ScannerScreenState extends State<ScannerScreen> {
 // ----------------- HALAMAN UJIAN TERKUNCI -----------------
 class ExamScreen extends StatefulWidget {
   final String examUrl;
+  final String examTitle;
   final String studentName;
   final String studentClass;
   final String deviceId;
   final int initialBattery;
+  final String supervisorPin;
   final String? firebaseDbUrl;
 
   const ExamScreen({
     super.key,
     required this.examUrl,
+    required this.examTitle,
     required this.studentName,
     required this.studentClass,
     required this.deviceId,
     required this.initialBattery,
+    required this.supervisorPin,
     this.firebaseDbUrl,
   });
 
@@ -490,12 +597,9 @@ class _ExamScreenState extends State<ExamScreen> {
   double _loadingProgress = 0.0;
   static const MethodChannel _kioskChannel = MethodChannel('com.exambro.app/kiosk');
 
-  final String _adminPassword = "123";
   int _violationsCount = 0;
   int _currentBattery = 100;
   Timer? _heartbeatTimer;
-
-  // Key unik identitas siswa
   late final String _studentKey;
 
   @override
@@ -521,12 +625,7 @@ class _ExamScreenState extends State<ExamScreen> {
             }
           },
           onPageFinished: (_) {
-            if (mounted) {
-              setState(() => _isLoading = false);
-            }
-          },
-          onWebResourceError: (error) {
-            debugPrint("WebView Error: ${error.description}");
+            if (mounted) setState(() => _isLoading = false);
           },
         ),
       )
@@ -555,7 +654,6 @@ class _ExamScreenState extends State<ExamScreen> {
     } catch (_) {}
   }
 
-  // ----------------- HEARTBEAT PING KE DASHBOARD -----------------
   void _startHeartbeat() {
     _sendHeartbeat(status: 'examining');
 
@@ -577,9 +675,7 @@ class _ExamScreenState extends State<ExamScreen> {
 
     try {
       String cleanDb = dbUrl.trim();
-      if (cleanDb.endsWith('/')) {
-        cleanDb = cleanDb.substring(0, cleanDb.length - 1);
-      }
+      if (cleanDb.endsWith('/')) cleanDb = cleanDb.substring(0, cleanDb.length - 1);
 
       final url = Uri.parse("$cleanDb/exambro/students/$_studentKey.json");
       final payload = jsonEncode({
@@ -598,16 +694,13 @@ class _ExamScreenState extends State<ExamScreen> {
         headers: {'Content-Type': 'application/json'},
       );
 
-      // Cek apakah guru mengirim perintah Remote Unlock
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is Map && (data['status'] == 'unlocked' || data['status'] == 'done')) {
           _exitViaRemoteUnlock();
         }
       }
-    } catch (e) {
-      debugPrint("Heartbeat error: $e");
-    }
+    } catch (_) {}
   }
 
   void _exitViaRemoteUnlock() async {
@@ -667,7 +760,7 @@ class _ExamScreenState extends State<ExamScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Masukkan PIN / Password Pengawas untuk membuka kunci layar:',
+                'Masukkan PIN Pengawas untuk membuka kunci layar:',
                 style: TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 16),
@@ -678,7 +771,7 @@ class _ExamScreenState extends State<ExamScreen> {
                 autofocus: true,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  labelText: 'PIN Pengawas (Default: 123)',
+                  labelText: 'PIN Pengawas (Default: ${widget.supervisorPin})',
                   suffixIcon: IconButton(
                     icon: Icon(obscureText ? Icons.visibility_off : Icons.visibility, size: 20),
                     onPressed: () => setDialogState(() => obscureText = !obscureText),
@@ -699,7 +792,7 @@ class _ExamScreenState extends State<ExamScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () async {
-                if (passController.text == _adminPassword) {
+                if (passController.text == widget.supervisorPin) {
                   _heartbeatTimer?.cancel();
                   await _sendHeartbeat(status: 'done');
                   await _matikanModeKiosk();
@@ -744,10 +837,20 @@ class _ExamScreenState extends State<ExamScreen> {
               const Icon(Icons.shield_rounded, size: 18, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  "${widget.studentName} (${widget.studentClass})",
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.examTitle,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      "${widget.studentName} (${widget.studentClass})",
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                  ],
                 ),
               ),
             ],
