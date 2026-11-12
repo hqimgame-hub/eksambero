@@ -1,0 +1,532 @@
+================================================================================
+PANDUAN LENGKAP & KUMPULAN KODE SUMBER EXAMBRO ANDROID (GITHUB ACTIONS BUILD)
+================================================================================
+
+Dokumen ini berisi seluruh struktur kode dan instruksi untuk membuat aplikasi 
+Exambro Android yang siap dirakit (compile) otomatis menjadi file APK gratis
+melalui GitHub Actions.
+
+Fitur Keamanan:
+1. Anti-Screenshot & Anti-Screen Recording (FLAG_SECURE)
+2. Layar Terkunci / Kiosk Mode (LockTaskMode Android)
+3. Tombol Kembali / Navigasi terkunci
+4. Proteksi Keluar dengan Password/PIN Guru Pengawas
+5. Fitur Scan QR Code dan Input Manual Link Google Form / LMS
+
+--------------------------------------------------------------------------------
+STRUKTUR FOLDER YANG AKAN DIBUAT DI REPOSITORI GITHUB ANDA:
+--------------------------------------------------------------------------------
+repo-anda/
+├── .github/
+│   └── workflows/
+│       └── build-apk.yml
+├── android/
+│   ├── app/
+│   │   ├── build.gradle
+│   │   └── src/
+│   │       └── main/
+│   │           ├── AndroidManifest.xml
+│   │           └── kotlin/
+│   │               └── com/
+│   │                   └── exambro/
+│   │                       └── app/
+│   │                           └── MainActivity.kt
+│   └── build.gradle
+├── lib/
+│   └── main.dart
+└── pubspec.yaml
+
+
+================================================================================
+BAGIAN 1: pubspec.yaml
+Lokasi: /pubspec.yaml
+================================================================================
+Simpan kode berikut sebagai file "pubspec.yaml" di folder paling luar:
+
+name: exambro_app
+description: "Aplikasi Exambro Android Kiosk WebView Anti Curang"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: ^4.10.0
+  mobile_scanner: ^6.0.0
+  wakelock_plus: ^1.2.8
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+
+================================================================================
+BAGIAN 2: lib/main.dart
+Lokasi: /lib/main.dart
+================================================================================
+Simpan kode berikut di dalam folder "lib" dengan nama "main.dart":
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  runApp(const ExamBroApp());
+}
+
+class ExamBroApp extends StatelessWidget {
+  const ExamBroApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'ExamBro Siswa',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
+        useMaterial3: true,
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+// ----------------- HALAMAN DEPAN (INPUT / SCAN) -----------------
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _urlController = TextEditingController();
+
+  void _mulaiUjian(String url) {
+    if (url.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masukkan Link Ujian atau Scan QR terlebih dahulu!')),
+      );
+      return;
+    }
+
+    String formattedUrl = url.trim();
+    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+      formattedUrl = 'https://$formattedUrl';
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExamScreen(examUrl: formattedUrl),
+      ),
+    );
+  }
+
+  void _bukaScanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScannerScreen(
+          onScanned: (result) {
+            Navigator.pop(context);
+            _urlController.text = result;
+            _mulaiUjian(result);
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text('ExamBro Client Ujian', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.security, size: 80, color: Colors.blueAccent),
+            const SizedBox(height: 16),
+            const Text(
+              'Aplikasi Ujian Aman',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Layar akan terkunci secara otomatis selama ujian berlangsung.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              controller: _urlController,
+              decoration: InputDecoration(
+                labelText: 'Link Ujian / Google Form',
+                hintText: 'https://forms.gle/...',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _bukaScanner,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scan QR Guru'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _mulaiUjian(_urlController.text),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Mulai Ujian'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ----------------- HALAMAN SCANNER QR -----------------
+class ScannerScreen extends StatelessWidget {
+  final Function(String) onScanned;
+  const ScannerScreen({super.key, required this.onScanned});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Scan QR Code Ujian')),
+      body: MobileScanner(
+        onDetect: (capture) {
+          final List<Barcode> barcodes = capture.barcodes;
+          for (final barcode in barcodes) {
+            if (barcode.rawValue != null) {
+              onScanned(barcode.rawValue!);
+              break;
+            }
+          }
+        },
+      ),
+    );
+  }
+}
+
+// ----------------- HALAMAN UJIAN TERKUNCI -----------------
+class ExamScreen extends StatefulWidget {
+  final String examUrl;
+  const ExamScreen({super.key, required this.examUrl});
+
+  @override
+  State<ExamScreen> createState() => _ExamScreenState();
+}
+
+class _ExamScreenState extends State<ExamScreen> {
+  late final WebViewController _controller;
+  bool _isLoading = true;
+  static const MethodChannel _kioskChannel = MethodChannel('com.exambro.app/kiosk');
+  
+  // PASSWORD DEFAULT PENGAWAS (Ganti sesuai kebutuhan)
+  final String _adminPassword = "123";
+
+  @override
+  void initState() {
+    super.initState();
+    WakelockPlus.enable();
+    _aktifkanModeKiosk();
+
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) => setState(() => _isLoading = false),
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.examUrl));
+  }
+
+  Future<void> _aktifkanModeKiosk() async {
+    try {
+      await _kioskChannel.invokeMethod('startLockTask');
+    } catch (_) {}
+  }
+
+  Future<void> _matikanModeKiosk() async {
+    try {
+      await _kioskChannel.invokeMethod('stopLockTask');
+    } catch (_) {}
+  }
+
+  void _dialogKeluar() {
+    final TextEditingController passController = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Keluar dari Ujian'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Masukkan PIN / Password Pengawas untuk membuka kunci layar:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: passController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'PIN Pengawas (Default: 123)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              if (passController.text == _adminPassword) {
+                await _matikanModeKiosk();
+                WakelockPlus.disable();
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context);
+                }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password Pengawas Salah!')),
+                );
+              }
+            },
+            child: const Text('Buka Kunci'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _dialogKeluar();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Ujian Berlangsung', style: TextStyle(fontSize: 16)),
+          backgroundColor: Colors.blueAccent,
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.exit_to_app),
+              tooltip: 'Keluar Ujian',
+              onPressed: _dialogKeluar,
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+================================================================================
+BAGIAN 3: MainActivity.kt (ANTI-SCREENSHOT & KIOSK NATIVE)
+Lokasi: /android/app/src/main/kotlin/com/exambro/app/MainActivity.kt
+================================================================================
+
+package com.exambro.app
+
+import android.os.Bundle
+import android.view.WindowManager
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity: FlutterActivity() {
+    private val CHANNEL = "com.exambro.app/kiosk"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // BLOKIR SCREENSHOT & PEREKAM LAYAR
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "startLockTask" -> {
+                    try {
+                        startLockTask()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("KIOSK_ERROR", e.message, null)
+                    }
+                }
+                "stopLockTask" -> {
+                    try {
+                        stopLockTask()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("KIOSK_ERROR", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+}
+
+
+================================================================================
+BAGIAN 4: AndroidManifest.xml (IZIN KAMERA & INTERNET)
+Lokasi: /android/app/src/main/AndroidManifest.xml
+================================================================================
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.exambro.app">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <application
+        android:label="ExamBro"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>
+
+
+================================================================================
+BAGIAN 5: build-apk.yml (GITHUB ACTIONS CLOUD BUILDER)
+Lokasi: /.github/workflows/build-apk.yml
+================================================================================
+
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --split-per-abi=false --release
+
+      - name: Upload Artifact APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: exambro-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+
+================================================================================
+LANGKAH CARA DOWNLOAD HASIL APK DARI GITHUB:
+================================================================================
+1. Masukkan file-file di atas ke repo GitHub Anda.
+2. Buka tab "Actions" di halaman repository GitHub Anda.
+3. Anda akan melihat aksi bernama "Build Android APK" sedang berputar (kuning).
+4. Tunggu sekitar 3-5 menit sampai centang hijau (selesai).
+5. Klik judul build tersebut, lalu gulir ke paling bawah di tabel "Artifacts".
+6. Klik "exambro-release-apk" untuk mengunduh file APK langsung ke HP/Komputer Anda!
+================================================================================
