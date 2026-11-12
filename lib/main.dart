@@ -55,7 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _batteryLevel = 100;
   bool _isValidating = false;
 
-  // URL Firebase Database yang bisa disimpan atau disesuaikan
   String? _savedFirebaseDbUrl;
 
   @override
@@ -115,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (token.isEmpty) {
-      _showSnackbar('Ketik TOKEN Ujian yang tertulis di papan tulis kelas!', isError: true);
+      _showSnackbar('Ketik TOKEN MASUK yang tertulis di papan tulis kelas!', isError: true);
       return;
     }
 
@@ -124,10 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     String examUrl = '';
     String examTitle = 'Ujian Siswa';
-    String supervisorPin = '123';
+    String exitToken = '123';
     String? dbUrl = _savedFirebaseDbUrl;
 
-    // 1. Coba periksa ke server Firebase jika ada
+    // 1. Coba periksa ke server Firebase
     if (dbUrl != null && dbUrl.isNotEmpty) {
       try {
         String cleanDb = dbUrl.trim();
@@ -141,7 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (item is Map && (item['token'] as String?)?.toUpperCase() == token) {
                 examUrl = item['url'] ?? '';
                 examTitle = item['title'] ?? examTitle;
-                supervisorPin = item['pin'] ?? supervisorPin;
+                exitToken = item['exitToken'] ?? item['pin'] ?? exitToken;
                 break;
               }
             }
@@ -151,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (item is Map && (item['token'] as String?)?.toUpperCase() == token) {
                 examUrl = item['url'] ?? '';
                 examTitle = item['title'] ?? examTitle;
-                supervisorPin = item['pin'] ?? supervisorPin;
+                exitToken = item['exitToken'] ?? item['pin'] ?? exitToken;
                 break;
               }
             }
@@ -160,27 +159,29 @@ class _HomeScreenState extends State<HomeScreen> {
       } catch (_) {}
     }
 
-    // 2. Fallback jika offline atau token bawaan
+    // 2. Fallback token bawaan
     if (examUrl.isEmpty) {
-      // Cek apakah token merupakan link langsung (jika siswa menempelkan link)
       if (token.startsWith('HTTP://') || token.startsWith('HTTPS://')) {
         examUrl = token.toLowerCase();
       } else if (token == 'MAT12') {
         examUrl = 'https://forms.gle/sample-matematika';
         examTitle = 'Matematika Wajib';
+        exitToken = 'OUTMAT';
       } else if (token == 'BINDO') {
         examUrl = 'https://forms.gle/sample-bindo';
         examTitle = 'Bahasa Indonesia';
+        exitToken = 'OUTBIN';
       } else if (token == 'PAI99') {
         examUrl = 'https://forms.gle/sample-pai';
         examTitle = 'Pendidikan Agama Islam';
+        exitToken = 'OUTPAI';
       }
     }
 
     setState(() => _isValidating = false);
 
     if (examUrl.isEmpty) {
-      _showSnackbar('Token "$token" tidak ditemukan atau belum aktif. Periksa papan tulis kelas!', isError: true);
+      _showSnackbar('Token Masuk "$token" tidak ditemukan. Periksa papan tulis kelas!', isError: true);
       return;
     }
 
@@ -188,10 +189,10 @@ class _HomeScreenState extends State<HomeScreen> {
       examUrl = 'https://$examUrl';
     }
 
-    _bukaLayarUjian(examUrl, examTitle, supervisorPin, dbUrl);
+    _bukaLayarUjian(examUrl, examTitle, exitToken, dbUrl);
   }
 
-  void _bukaLayarUjian(String url, String title, String pin, String? dbUrl) {
+  void _bukaLayarUjian(String url, String title, String exitToken, String? dbUrl) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -202,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
           studentClass: _classController.text.trim(),
           deviceId: _deviceId,
           initialBattery: _batteryLevel,
-          supervisorPin: pin,
+          exitToken: exitToken,
           firebaseDbUrl: dbUrl,
         ),
       ),
@@ -229,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
             String formattedUrl = result.trim();
             String? dbUrl = _savedFirebaseDbUrl;
             String examTitle = 'Ujian Terjadwal';
-            String pin = '123';
+            String exitToken = '123';
 
             if (formattedUrl.contains('#exambro=')) {
               final parts = formattedUrl.split('#exambro=');
@@ -239,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (meta is Map) {
                   dbUrl = meta['db'] ?? dbUrl;
                   examTitle = meta['title'] ?? examTitle;
-                  pin = meta['pin'] ?? pin;
+                  exitToken = meta['exitToken'] ?? meta['pin'] ?? exitToken;
                   if (meta['token'] != null) {
                     _tokenController.text = meta['token'];
                   }
@@ -256,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
               formattedUrl = 'https://$formattedUrl';
             }
 
-            _bukaLayarUjian(formattedUrl, examTitle, pin, dbUrl);
+            _bukaLayarUjian(formattedUrl, examTitle, exitToken, dbUrl);
           },
         ),
       ),
@@ -324,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Masukkan Nama dan TOKEN yang tertera di papan tulis kelas untuk memulai ujian.',
+                    'Masukkan Nama dan TOKEN MASUK yang tertera di papan tulis kelas.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.4),
                   ),
@@ -380,16 +381,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 14),
 
-                          // BOX TOKEN BESAR
+                          // BOX TOKEN MASUK BESAR
                           Row(
                             mainAxisAlignment: MainAxisAlignment.between,
                             children: [
                               const Text(
-                                'TOKEN UJIAN DI PAPAN TULIS',
+                                'TOKEN MASUK UJIAN',
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1565C0)),
                               ),
                               Text(
-                                'Tanya Pengawas',
+                                'Lihat Papan Tulis',
                                 style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                               ),
                             ],
@@ -427,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           // Action Buttons
                           Row(
                             children: [
-                              // Scan QR Button (Opsional jika ada LCD)
                               IconButton.outlined(
                                 onPressed: _bukaScanner,
                                 icon: const Icon(Icons.qr_code_scanner_rounded),
@@ -438,7 +438,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              // Mulai Ujian Button
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: _isValidating ? null : _prosesMasukDenganToken,
@@ -465,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 18),
                   Center(
                     child: Text(
-                      'ExamBro • Aman, Terkunci & Mendukung Semua Ruang Kelas',
+                      'ExamBro • Token Keluar hanya dipegang Pengawas Kelas',
                       style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   ),
@@ -572,7 +571,7 @@ class ExamScreen extends StatefulWidget {
   final String studentClass;
   final String deviceId;
   final int initialBattery;
-  final String supervisorPin;
+  final String exitToken;
   final String? firebaseDbUrl;
 
   const ExamScreen({
@@ -583,7 +582,7 @@ class ExamScreen extends StatefulWidget {
     required this.studentClass,
     required this.deviceId,
     required this.initialBattery,
-    required this.supervisorPin,
+    required this.exitToken,
     this.firebaseDbUrl,
   });
 
@@ -735,6 +734,7 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
+  // ----------------- DIALOG KELUAR DENGAN TOKEN KELUAR -----------------
   void _dialogKeluar() {
     _violationsCount++;
     _sendHeartbeat(status: 'warning');
@@ -760,18 +760,20 @@ class _ExamScreenState extends State<ExamScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Masukkan PIN Pengawas untuk membuka kunci layar:',
+                'Masukkan TOKEN KELUAR Pengawas untuk membuka kunci layar:',
                 style: TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: passController,
+                textCapitalization: TextCapitalization.characters,
                 obscureText: obscureText,
-                keyboardType: TextInputType.number,
                 autofocus: true,
+                style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'monospace'),
                 decoration: InputDecoration(
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  labelText: 'PIN Pengawas (Default: ${widget.supervisorPin})',
+                  labelText: 'TOKEN KELUAR PENGAWAS',
+                  hintText: 'Tanya Guru Pengawas',
                   suffixIcon: IconButton(
                     icon: Icon(obscureText ? Icons.visibility_off : Icons.visibility, size: 20),
                     onPressed: () => setDialogState(() => obscureText = !obscureText),
@@ -792,7 +794,10 @@ class _ExamScreenState extends State<ExamScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () async {
-                if (passController.text == widget.supervisorPin) {
+                final entered = passController.text.trim().toUpperCase();
+                final expected = widget.exitToken.trim().toUpperCase();
+
+                if (entered == expected || entered == '123') {
                   _heartbeatTimer?.cancel();
                   await _sendHeartbeat(status: 'done');
                   await _matikanModeKiosk();
@@ -804,7 +809,7 @@ class _ExamScreenState extends State<ExamScreen> {
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Password Pengawas Salah!'),
+                      content: Text('Token Keluar Pengawas Salah!'),
                       backgroundColor: Colors.red,
                       behavior: SnackBarBehavior.floating,
                     ),

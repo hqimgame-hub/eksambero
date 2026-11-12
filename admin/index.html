@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ExamBro Admin - Dashboard Pengawas & Jadwal Ujian</title>
+  <title>ExamBro Admin - Dashboard Pengawas & Token Ujian</title>
   
   <!-- Tailwind CSS & Inter Font -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -69,16 +69,16 @@
           <div>
             <div class="flex items-center space-x-2">
               <span class="font-extrabold text-lg text-slate-900 tracking-tight">ExamBro</span>
-              <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-50 text-brand-700 border border-brand-200">Sistem Token & SAT</span>
+              <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-50 text-brand-700 border border-brand-200">Sistem Token Ganda</span>
             </div>
-            <p class="text-xs text-slate-500">Panel Jadwal & Pengawasan Ujian Sekolah</p>
+            <p class="text-xs text-slate-500">Token Masuk (Siswa) & Token Keluar (Pengawas)</p>
           </div>
         </div>
 
         <!-- Center Tabs Navigation -->
         <nav class="hidden lg:flex items-center space-x-1">
           <button onclick="switchTab('schedule')" id="tab-btn-schedule" class="tab-button px-3.5 py-2 text-sm font-semibold rounded-lg text-brand-700 bg-brand-50 transition">
-            <i class="fa-solid fa-calendar-days mr-2"></i>Jadwal Mapel & Token
+            <i class="fa-solid fa-calendar-days mr-2"></i>Jadwal & Token Mapel
           </button>
           <button onclick="switchTab('board')" id="tab-btn-board" class="tab-button px-3.5 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">
             <i class="fa-solid fa-chalkboard-user mr-2 text-amber-600"></i>Papan Token Kelas
@@ -118,12 +118,12 @@
   <!-- Main Container -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-    <!-- ================= TAB 1: JADWAL MAPEL & TOKEN (PRE-SCHEDULING) ================= -->
+    <!-- ================= TAB 1: JADWAL & TOKEN MAPEL ================= -->
     <section id="tab-schedule" class="space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Jadwal Mapel & Token Masuk</h1>
-          <p class="text-sm text-slate-500 mt-1">Siapkan seluruh mata pelajaran sebelum SAT/PAS dimulai. Siswa masuk menggunakan Token atau Scan QR.</p>
+          <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Jadwal Mapel, Token Masuk & Token Keluar</h1>
+          <p class="text-sm text-slate-500 mt-1">Setiap mapel memiliki <strong>Token Masuk (untuk siswa)</strong> dan <strong>Token Keluar (rahasia pengawas)</strong>.</p>
         </div>
         <div class="flex items-center space-x-2">
           <button onclick="openAddExamModal()" class="inline-flex items-center px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl shadow-md shadow-brand-500/20 transition text-sm">
@@ -143,17 +143,16 @@
           <i class="fa-solid fa-calendar-plus"></i>
         </div>
         <h3 class="text-base font-bold text-slate-800">Belum Ada Jadwal Mata Pelajaran</h3>
-        <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Tambahkan mata pelajaran untuk SAT/PAS dari sekarang. Tentukan Token Masuk dan tautan Google Form masing-masing.</p>
+        <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Tambahkan mata pelajaran untuk SAT/PAS dari sekarang. Tentukan Token Masuk dan Token Keluar masing-masing.</p>
         <button onclick="openAddExamModal()" class="mt-4 inline-flex items-center px-4 py-2 text-xs font-semibold rounded-xl text-white bg-brand-600 hover:bg-brand-700 transition">
           <i class="fa-solid fa-plus mr-1.5"></i>Buat Jadwal Pertama
         </button>
       </div>
     </section>
 
-    <!-- ================= TAB 2: PAPAN TOKEN KELAS (TANPA / DENGAN LCD) ================= -->
+    <!-- ================= TAB 2: PAPAN TOKEN KELAS ================= -->
     <section id="tab-board" class="hidden space-y-6">
       <div class="bg-slate-900 rounded-3xl text-white p-6 sm:p-10 shadow-2xl relative overflow-hidden">
-        <!-- Background Grid Effect -->
         <div class="absolute inset-0 opacity-10 bg-[radial-gradient(#818cf8_1px,transparent_1px)] [background-size:16px_16px]"></div>
 
         <div class="relative z-10 space-y-8">
@@ -168,56 +167,66 @@
             </div>
 
             <div class="flex items-center space-x-2">
-              <label class="text-xs text-slate-400 font-semibold mr-1">Pilih Mapel Aktif:</label>
+              <label class="text-xs text-slate-400 font-semibold mr-1">Pilih Mapel:</label>
               <select id="select-active-exam" onchange="changeActiveBoardExam(this.value)" class="bg-slate-800 text-white border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-brand-500">
                 <!-- Populated by JS -->
               </select>
             </div>
           </div>
 
-          <!-- Main Token Presentation Box -->
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+          <!-- Dual Token Display: Token Masuk (Publik) & Token Keluar (Rahasia Pengawas) -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             
-            <!-- Box Kiri: TOKEN MASUK RAKSASA (Untuk Ditulis Guru di Papan Tulis) -->
-            <div class="lg:col-span-2 bg-slate-800/80 border border-slate-700/80 rounded-3xl p-6 sm:p-8 space-y-6 text-center lg:text-left">
-              <div>
-                <span class="text-xs uppercase font-extrabold tracking-widest text-brand-400">TULIS KODE INI DI PAPAN TULIS KELAS</span>
-                <p class="text-xs text-slate-400 mt-0.5">Siswa cukup mengetik token ini di aplikasi HP tanpa perlu scan LCD</p>
-              </div>
-
-              <!-- Huge Token Display Badge -->
-              <div class="bg-slate-950/70 border-2 border-dashed border-amber-400/60 rounded-3xl py-6 px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div class="text-center sm:text-left">
-                  <span class="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 block">TOKEN MASUK SISWA</span>
-                  <span id="board-exam-token" class="text-5xl sm:text-6xl font-black font-mono tracking-widest text-amber-400 drop-shadow-md">MAT12</span>
+            <!-- Box 1: TOKEN MASUK SISWA (Tulis di Papan Tulis Kelas) -->
+            <div class="lg:col-span-2 bg-slate-800/80 border border-slate-700/80 rounded-3xl p-6 sm:p-8 space-y-6">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-xs uppercase font-extrabold tracking-widest text-emerald-400">TULIS DI PAPAN TULIS KELAS (PUBLIK SISWA)</span>
+                  <p class="text-xs text-slate-400 mt-0.5">Siswa mengetik token ini di HP untuk membuka soal ujian</p>
                 </div>
-                <button onclick="copyCurrentToken()" class="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 text-xs font-bold transition flex items-center shrink-0">
-                  <i class="fa-regular fa-copy mr-2"></i>Salin Token
+                <button onclick="copyCurrentToken('enter')" class="px-3.5 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition flex items-center">
+                  <i class="fa-regular fa-copy mr-1.5"></i>Salin
                 </button>
               </div>
 
-              <!-- Petunjuk Siswa -->
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left pt-2">
-                <div class="p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
-                  <span class="text-xs font-bold text-white block mb-1">1. Buka ExamBro</span>
-                  <span class="text-[11px] text-slate-400 leading-tight block">Ketik Nama & Kelas Anda di halaman depan aplikasi.</span>
+              <!-- Huge Token Masuk Display -->
+              <div class="bg-slate-950/80 border-2 border-dashed border-emerald-500/50 rounded-2xl py-6 px-8 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90 block">KODE TOKEN MASUK</span>
+                  <span id="board-exam-token" class="text-5xl sm:text-6xl font-black font-mono tracking-widest text-emerald-400 drop-shadow-md">MAT12</span>
                 </div>
-                <div class="p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
-                  <span class="text-xs font-bold text-white block mb-1">2. Ketik Token</span>
-                  <span class="text-[11px] text-slate-400 leading-tight block">Masukkan kode token di atas lalu tekan Mulai Ujian.</span>
+                <div class="text-xs text-slate-400 sm:text-right max-w-xs">
+                  Siswa cukup buka aplikasi ExamBro, ketik nama dan masukkan token di atas.
                 </div>
-                <div class="p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
-                  <span class="text-xs font-bold text-white block mb-1">3. Layar Terkunci</span>
-                  <span class="text-[11px] text-slate-400 leading-tight block">Soal langsung terbuka dan sistem anti-curang aktif.</span>
+              </div>
+
+              <!-- Box Token Keluar Pengawas (Rahasia Guru) -->
+              <div class="bg-amber-950/30 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center space-x-3">
+                  <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-key"></i>
+                  </div>
+                  <div>
+                    <span class="text-xs font-bold text-amber-300 uppercase tracking-wider block">TOKEN KELUAR PENGAWAS (RAHASIA GURU)</span>
+                    <span class="text-xs text-slate-400">Hanya diberikan/diketik guru setelah siswa selesai submit Google Form.</span>
+                  </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <span id="board-exam-exit-token" class="px-4 py-2 rounded-xl bg-amber-400/10 border border-amber-400/30 font-mono font-bold text-lg text-amber-300 tracking-wider">
+                    SELESAI12
+                  </span>
+                  <button onclick="copyCurrentToken('exit')" class="p-2 text-slate-400 hover:text-amber-300 transition" title="Salin Token Keluar">
+                    <i class="fa-regular fa-copy"></i>
+                  </button>
                 </div>
               </div>
             </div>
 
-            <!-- Box Kanan: QR Code Opsional (Bagi Kelas yang Punya LCD) -->
+            <!-- Box 2: QR Code Opsional (Untuk Kelas dengan Proyektor LCD) -->
             <div class="bg-white rounded-3xl p-6 text-slate-900 text-center flex flex-col items-center justify-center shadow-xl">
               <span class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">OPSI SCAN QR (JIKA ADA LCD)</span>
               <div id="board-qr-container" class="p-2 border-2 border-slate-200 rounded-2xl bg-white shadow-inner"></div>
-              <p class="text-[11px] text-slate-500 mt-3 font-semibold">Scan langsung mengarah ke token mapel ini</p>
+              <p class="text-[11px] text-slate-500 mt-3 font-semibold">Scan otomatis membuka soal tanpa ketik token</p>
             </div>
 
           </div>
@@ -240,7 +249,7 @@
             <span id="demo-toggle-text">Data Simulasi</span>
           </button>
           <button onclick="unlockAllStudents()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs transition shadow-sm">
-            <i class="fa-solid fa-lock-open mr-1.5"></i>Buka Kunci Semua
+            <i class="fa-solid fa-lock-open mr-1.5"></i>Buka Kunci Semua Siswa
           </button>
           <button onclick="exportToCSV()" class="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition shadow-sm">
             <i class="fa-solid fa-file-excel mr-1.5 text-emerald-600"></i>Export CSV
@@ -308,7 +317,7 @@
           </table>
         </div>
 
-        <!-- Empty State (When no students) -->
+        <!-- Empty State -->
         <div id="empty-student-state" class="p-12 text-center">
           <div class="w-16 h-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3 text-2xl">
             <i class="fa-solid fa-user-clock"></i>
@@ -330,7 +339,6 @@
           Bagikan file APK ini kepada seluruh siswa di awal semester. Satu aplikasi dapat digunakan untuk semua mata pelajaran sepanjang tahun.
         </p>
 
-        <!-- QR Download Box -->
         <div class="my-8 p-6 bg-slate-50 rounded-2xl border border-slate-200 inline-block">
           <div id="apk-qr-container" class="mx-auto flex justify-center"></div>
           <p class="text-xs font-semibold text-slate-600 mt-3">Scan untuk Download APK di HP Siswa</p>
@@ -366,23 +374,32 @@
         </div>
 
         <div class="grid grid-cols-2 gap-3">
+          <!-- Token Masuk (Siswa) -->
           <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">
-              TOKEN Masuk Siswa <span class="text-brand-600 font-bold">*</span>
+            <label class="block text-xs font-semibold text-emerald-700 mb-1">
+              TOKEN MASUK (Siswa) <span class="text-brand-600 font-bold">*</span>
             </label>
             <div class="relative">
-              <input type="text" id="form-exam-token" maxlength="10" placeholder="MAT12" style="text-transform: uppercase;" class="w-full pl-3.5 pr-8 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold tracking-wider text-brand-700 focus:ring-2 focus:ring-brand-500">
-              <button type="button" onclick="generateRandomToken()" class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-brand-600 text-xs" title="Acak Token">
+              <input type="text" id="form-exam-token" maxlength="12" placeholder="MAT12" style="text-transform: uppercase;" class="w-full pl-3.5 pr-8 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50/30 text-sm font-mono font-bold tracking-wider text-emerald-800 focus:ring-2 focus:ring-emerald-500">
+              <button type="button" onclick="generateRandomToken('enter')" class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-emerald-600 text-xs" title="Acak Token Masuk">
                 <i class="fa-solid fa-shuffle"></i>
               </button>
             </div>
-            <span class="text-[10px] text-slate-400">Ditulis di papan tulis kelas</span>
+            <span class="text-[10px] text-slate-400">Ditulis di papan tulis</span>
           </div>
 
+          <!-- Token Keluar (Pengawas) -->
           <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">PIN Pengawas Keluar</label>
-            <input type="text" id="form-exam-pin" value="123" placeholder="123" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:ring-2 focus:ring-brand-500">
-            <span class="text-[10px] text-slate-400">PIN guru untuk buka kunci</span>
+            <label class="block text-xs font-semibold text-amber-700 mb-1">
+              TOKEN KELUAR (Pengawas) <span class="text-brand-600 font-bold">*</span>
+            </label>
+            <div class="relative">
+              <input type="text" id="form-exam-exit-token" maxlength="12" placeholder="OUT12" style="text-transform: uppercase;" class="w-full pl-3.5 pr-8 py-2.5 rounded-xl border border-amber-300 bg-amber-50/30 text-sm font-mono font-bold tracking-wider text-amber-800 focus:ring-2 focus:ring-amber-500">
+              <button type="button" onclick="generateRandomToken('exit')" class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-amber-600 text-xs" title="Acak Token Keluar">
+                <i class="fa-solid fa-shuffle"></i>
+              </button>
+            </div>
+            <span class="text-[10px] text-slate-400">Rahasia pengawas di kelas</span>
           </div>
         </div>
 
@@ -462,7 +479,7 @@
   <!-- Footer -->
   <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400 mt-auto">
     <div class="max-w-7xl mx-auto px-4">
-      <p>ExamBro Ecosystem • Solusi Asesmen Sekolah Berbasis Token & Kiosk Anti-Curang</p>
+      <p>ExamBro Ecosystem • Solusi Asesmen Sekolah Berbasis Token Ganda & Kiosk Anti-Curang</p>
     </div>
   </footer>
 

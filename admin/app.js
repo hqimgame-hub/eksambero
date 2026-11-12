@@ -1,5 +1,5 @@
 // ==========================================
-// ExamBro Admin Dashboard Core Logic (SAT & Token System)
+// ExamBro Admin Dashboard Core Logic (Dual Token System)
 // ==========================================
 
 let currentTab = 'schedule';
@@ -11,14 +11,14 @@ let dbRef = null;
 
 let knownDevices = {};
 
-// Daftar Jadwal Ujian Pre-Scheduling (SAT / PAS)
+// Daftar Jadwal Ujian Pre-Scheduling dengan Token Masuk & Token Keluar Pengawas
 let examSchedules = [
   {
     id: 'exam-1',
     title: 'Matematika Wajib - Kelas XII',
-    token: 'MAT12',
+    token: 'MAT12',          // Token Masuk Siswa
+    exitToken: 'OUTMAT',     // Token Keluar Pengawas
     url: 'https://forms.gle/sample-matematika',
-    pin: '123',
     date: new Date().toISOString().slice(0, 10),
     startTime: '07:30',
     endTime: '09:30',
@@ -28,8 +28,8 @@ let examSchedules = [
     id: 'exam-2',
     title: 'Bahasa Indonesia - Kelas XII',
     token: 'BINDO',
+    exitToken: 'OUTBIN',
     url: 'https://forms.gle/sample-bindo',
-    pin: '123',
     date: new Date().toISOString().slice(0, 10),
     startTime: '10:00',
     endTime: '11:30',
@@ -39,8 +39,8 @@ let examSchedules = [
     id: 'exam-3',
     title: 'Pendidikan Agama Islam - Kelas XII',
     token: 'PAI99',
+    exitToken: 'OUTPAI',
     url: 'https://forms.gle/sample-pai',
-    pin: '123',
     date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), // Besok
     startTime: '07:30',
     endTime: '09:00',
@@ -102,7 +102,7 @@ function switchTab(tabId) {
   }
 }
 
-// ----------------- SCHEDULES CRUD (PRE-SCHEDULING) -----------------
+// ----------------- SCHEDULES CRUD (TOKEN MASUK & TOKEN KELUAR) -----------------
 function loadStoredSchedules() {
   const saved = localStorage.getItem('exambro_schedules');
   if (saved) {
@@ -118,7 +118,6 @@ function loadStoredSchedules() {
 function saveSchedulesToStorage() {
   localStorage.setItem('exambro_schedules', JSON.stringify(examSchedules));
   if (dbRef) {
-    // Sinkronkan seluruh jadwal token ke Firebase agar HP siswa bisa langsung memvalidasi
     dbRef.child('schedules').set(examSchedules);
   }
 }
@@ -135,15 +134,16 @@ function renderScheduleCards() {
 
   emptyState.classList.add('hidden');
   container.innerHTML = examSchedules.map(exam => {
+    const exitTok = exam.exitToken || '123';
     return `
       <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 hover:shadow-md transition flex flex-col justify-between space-y-4">
         <div>
           <div class="flex items-start justify-between gap-2 mb-2">
-            <span class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-brand-50 text-brand-700 border border-brand-200 font-mono">
-              TOKEN: ${exam.token}
+            <span class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono">
+              MASUK: ${exam.token}
             </span>
             <div class="flex items-center space-x-1">
-              <button onclick="editExam('${exam.id}')" class="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-50 transition" title="Edit Jadwal">
+              <button onclick="editExam('${exam.id}')" class="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-50 transition" title="Edit Mapel & Token">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
               <button onclick="deleteExam('${exam.id}')" class="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-50 transition" title="Hapus Jadwal">
@@ -171,9 +171,13 @@ function renderScheduleCards() {
         </div>
 
         <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
-          <span class="text-[11px] font-semibold text-slate-500">PIN Guru: <code class="text-slate-800">${exam.pin || '123'}</code></span>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+              KELUAR: <strong class="font-mono">${exitTok}</strong>
+            </span>
+          </div>
           <button onclick="presentOnBoard('${exam.id}')" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition flex items-center">
-            <i class="fa-solid fa-chalkboard-user mr-1.5 text-amber-400"></i>Buka di Papan
+            <i class="fa-solid fa-chalkboard-user mr-1.5 text-amber-400"></i>Papan Kelas
           </button>
         </div>
       </div>
@@ -185,9 +189,9 @@ function openAddExamModal() {
   document.getElementById('modal-exam-heading').innerText = 'Tambah Jadwal Mata Pelajaran';
   document.getElementById('form-exam-id').value = '';
   document.getElementById('form-exam-title').value = '';
-  document.getElementById('form-exam-token').value = generateSuggestedToken();
+  document.getElementById('form-exam-token').value = generateSuggestedToken('enter');
+  document.getElementById('form-exam-exit-token').value = generateSuggestedToken('exit');
   document.getElementById('form-exam-url').value = '';
-  document.getElementById('form-exam-pin').value = '123';
   document.getElementById('form-exam-date').value = new Date().toISOString().slice(0, 10);
   document.getElementById('form-exam-start').value = '07:30';
   document.getElementById('form-exam-end').value = '09:30';
@@ -202,8 +206,8 @@ function editExam(id) {
   document.getElementById('form-exam-id').value = exam.id;
   document.getElementById('form-exam-title').value = exam.title;
   document.getElementById('form-exam-token').value = exam.token;
+  document.getElementById('form-exam-exit-token').value = exam.exitToken || '123';
   document.getElementById('form-exam-url').value = exam.url;
-  document.getElementById('form-exam-pin').value = exam.pin || '123';
   document.getElementById('form-exam-date').value = exam.date || '';
   document.getElementById('form-exam-start').value = exam.startTime || '07:30';
   document.getElementById('form-exam-end').value = exam.endTime || '09:30';
@@ -214,18 +218,22 @@ function closeExamModal() {
   document.getElementById('exam-modal').classList.add('hidden');
 }
 
-function generateRandomToken() {
+function generateRandomToken(type = 'enter') {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let token = '';
-  for (let i = 0; i < 5; i++) {
+  let token = type === 'enter' ? 'IN' : 'OUT';
+  for (let i = 0; i < 4; i++) {
     token += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  document.getElementById('form-exam-token').value = token;
+  if (type === 'enter') {
+    document.getElementById('form-exam-token').value = token;
+  } else {
+    document.getElementById('form-exam-exit-token').value = token;
+  }
 }
 
-function generateSuggestedToken() {
+function generateSuggestedToken(type = 'enter') {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let token = 'EX';
+  let token = type === 'enter' ? 'EX' : 'OUT';
   for (let i = 0; i < 3; i++) {
     token += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -235,33 +243,33 @@ function generateSuggestedToken() {
 function saveExamSchedule() {
   const title = document.getElementById('form-exam-title').value.trim();
   const token = document.getElementById('form-exam-token').value.trim().toUpperCase();
+  const exitToken = document.getElementById('form-exam-exit-token').value.trim().toUpperCase() || '123';
   const url = document.getElementById('form-exam-url').value.trim();
-  const pin = document.getElementById('form-exam-pin').value.trim() || '123';
   const date = document.getElementById('form-exam-date').value;
   const startTime = document.getElementById('form-exam-start').value;
   const endTime = document.getElementById('form-exam-end').value;
   const id = document.getElementById('form-exam-id').value;
 
   if (!title || !token || !url) {
-    alertToast('Mohon lengkapi Nama Mapel, Token, dan Tautan Soal!', 'warning');
+    alertToast('Mohon lengkapi Nama Mapel, Token Masuk, dan Tautan Soal!', 'warning');
     return;
   }
 
   if (id) {
     const idx = examSchedules.findIndex(e => e.id === id);
     if (idx !== -1) {
-      examSchedules[idx] = { id, title, token, url, pin, date, startTime, endTime, isActive: true };
+      examSchedules[idx] = { id, title, token, exitToken, url, date, startTime, endTime, isActive: true };
     }
   } else {
     const newId = 'exam-' + Date.now();
-    examSchedules.push({ id: newId, title, token, url, pin, date, startTime, endTime, isActive: true });
+    examSchedules.push({ id: newId, title, token, exitToken, url, date, startTime, endTime, isActive: true });
   }
 
   saveSchedulesToStorage();
   renderScheduleCards();
   populateActiveExamSelect();
   closeExamModal();
-  alertToast('Jadwal Ujian berhasil disimpan!', 'success');
+  alertToast('Jadwal Ujian & Token berhasil disimpan!', 'success');
 }
 
 function deleteExam(id) {
@@ -300,12 +308,12 @@ function updateBoardDisplay() {
   document.getElementById('board-exam-title').innerText = exam.title;
   document.getElementById('board-exam-time').innerText = `Tanggal: ${exam.date || 'Hari Ini'} • Jam: ${exam.startTime} - ${exam.endTime} WIB`;
   document.getElementById('board-exam-token').innerText = exam.token;
+  document.getElementById('board-exam-exit-token').innerText = exam.exitToken || '123';
 
   // Render QR Code untuk opsi LCD
   const qrContainer = document.getElementById('board-qr-container');
   qrContainer.innerHTML = '';
   
-  // Format payload QR: Memuat URL soal dan token
   let qrText = exam.url;
   const configStr = localStorage.getItem('exambro_firebase_config');
   if (configStr) {
@@ -314,9 +322,9 @@ function updateBoardDisplay() {
       if (cfg.databaseURL) {
         qrText = `${exam.url}#exambro=${encodeURIComponent(JSON.stringify({
           token: exam.token,
+          exitToken: exam.exitToken || '123',
           title: exam.title,
-          db: cfg.databaseURL,
-          pin: exam.pin
+          db: cfg.databaseURL
         }))}`;
       }
     } catch (_) {}
@@ -332,11 +340,12 @@ function updateBoardDisplay() {
   });
 }
 
-function copyCurrentToken() {
+function copyCurrentToken(type = 'enter') {
   const exam = examSchedules.find(e => e.id === activeExamId);
   if (!exam) return;
-  navigator.clipboard.writeText(exam.token).then(() => {
-    alertToast(`Token ${exam.token} disalin ke papan klip!`, 'success');
+  const tok = type === 'enter' ? exam.token : (exam.exitToken || '123');
+  navigator.clipboard.writeText(tok).then(() => {
+    alertToast(`Token ${tok} berhasil disalin!`, 'success');
   });
 }
 
@@ -458,7 +467,7 @@ function renderStudentsTable() {
             : `<span class="text-xs text-slate-400">-</span>`}
         </td>
         <td class="px-6 py-4 text-right">
-          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition">
+          <button onclick="unlockStudent('${s.id}')" class="px-3 py-1.5 text-xs font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition" title="Buka Kunci Layar Siswa">
             <i class="fa-solid fa-lock-open mr-1"></i>Buka Kunci
           </button>
         </td>
@@ -588,7 +597,7 @@ function initFirebase() {
 
     setConnectionStatus(true, 'Firebase Terhubung');
 
-    // Sinkronkan jadwal token ke server
+    // Sinkronkan jadwal mapel & token ke server
     dbRef.child('schedules').set(examSchedules);
 
     // Dengarkan aktivitas siswa
